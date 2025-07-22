@@ -79,10 +79,17 @@ class VoiceProcessor {
           });
           
           if (reservationResult.success) {
-            // Send confirmation
+            // Send confirmation using the customer's provided phone number, not the original caller's phone
+            const smsTargetPhone = reservationResult.reservation.customerPhone || reservationResult.reservation.customer_phone;
+            console.log('📱 SMS target phone:', {
+              originalCallerPhone: customerPhone,
+              customerProvidedPhone: smsTargetPhone,
+              usingForSMS: smsTargetPhone
+            });
+            
             await this.notificationService.sendConfirmation(
               reservationResult.reservation, 
-              customerPhone
+              smsTargetPhone
             );
 
             // Reset conversation context for fresh start
@@ -372,9 +379,43 @@ class VoiceProcessor {
         return targetDate.format('YYYY-MM-DD');
       }
       
-      // Try to parse as a regular date
-      const parsedDate = moment(dateInput);
+      // Try to parse as a regular date with explicit formats
+      const currentYear = moment().year();
+      const dateFormats = [
+        'YYYY-MM-DD',     // 2025-09-27
+        'MM-DD-YYYY',     // 09-27-2025
+        'MMM DD',         // Sep 27  
+        'MMMM DD',        // September 27
+        'MMM DD YYYY',    // Sep 27 2025
+        'MMMM DD YYYY',   // September 27 2025
+      ];
+      
+      let parsedDate;
+      
+      // Try parsing with explicit formats first
+      for (const format of dateFormats) {
+        parsedDate = moment(dateInput, format);
+        if (parsedDate.isValid()) {
+          // If no year was provided (MMM DD format), assume current year
+          if (format === 'MMM DD' || format === 'MMMM DD') {
+            if (parsedDate.year() === 2001) { // moment defaults to 2001 for 2-digit years
+              parsedDate.year(currentYear);
+              console.log(`📅 Adjusted date to current year: ${parsedDate.format('YYYY-MM-DD')}`);
+            }
+          }
+          return parsedDate.format('YYYY-MM-DD');
+        }
+      }
+      
+      // Fallback: try moment's auto-detection (this may still show warning)
+      parsedDate = moment(dateInput);
       if (parsedDate.isValid()) {
+        // If the parsed date is in the past (wrong year), assume current year
+        if (parsedDate.year() < currentYear) {
+          // Try parsing with current year
+          parsedDate = moment(`${currentYear} ${dateInput}`);
+          console.log(`📅 Adjusted date to current year: ${parsedDate.format('YYYY-MM-DD')}`);
+        }
         return parsedDate.format('YYYY-MM-DD');
       }
     }

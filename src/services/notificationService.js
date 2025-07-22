@@ -62,6 +62,8 @@ class NotificationService {
 
     try {
       const message = this.createSMSMessage(reservation);
+      console.log('📱 SMS Message Content:', message);
+      console.log('📱 Sending SMS to:', customerPhone);
       
       const result = await this.twilioClient.messages.create({
         body: message,
@@ -106,17 +108,16 @@ class NotificationService {
   }
 
   createSMSMessage(reservation) {
-    return `🍽️ Reservation Confirmed at ${this.restaurantInfo.name}
-
-📅 Date: ${reservation.date}
-🕒 Time: ${reservation.time}
-👥 Party Size: ${reservation.partySize}
-👤 Name: ${reservation.customerName}
-
-📍 ${this.restaurantInfo.address}
-📞 Call us: ${this.restaurantInfo.phone}
-
-Thank you for choosing ${this.restaurantInfo.name}! We look forward to serving you.`;
+    // Convert 24-hour time to 12-hour format for display
+    const time24 = reservation.time;
+    const timeMoment = require('moment')(time24, 'HH:mm');
+    const time12 = timeMoment.format('h:mm A');
+    
+    // Format date to readable format (e.g., "Aug 10, 2025")
+    const dateMoment = require('moment')(reservation.date);
+    const readableDate = dateMoment.format('MMM D, YYYY');
+    
+    return `Reservation confirmed: ${reservation.customerName} for ${reservation.partySize} at ${time12} on ${readableDate} at ${this.restaurantInfo.name}.`;
   }
 
   createEmailContent(reservation) {
