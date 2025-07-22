@@ -1,0 +1,100 @@
+﻿Project Description
+An intelligent voice AI agent that handles incoming phone calls for local restaurant chains, automating reservations, answering frequently asked questions, and providing customer support through natural conversation. The system integrates with existing restaurant operations (calendars, messaging) to create a seamless customer experience.
+Problem Statement
+Local restaurants lose revenue from missed calls, have limited staff for phone support, and struggle with after-hours booking requests. Manual reservation management is inefficient and prone to double-bookings or missed opportunities.
+Solution Overview
+Deploy an AI voice assistant that operates 24/7, handles routine inquiries, books reservations in real-time, and maintains customer communication through automated confirmations and reminders.
+Use case target : Local restaurant “Sylvie’s kitchen”. Agent pick ups all, handels questions on restaurant policy, menu items, hours and reservations.
+Primary User Journey: Making a Reservation
+flowchart TD
+    A[Customer dials restaurant] --> B[Sofia picks up call]
+    B --> C[Greeting & Intent Detection]
+    C --> D{Intent Classification}
+    D -->|Reservation| E[Collect booking details]
+    D -->|FAQ| F[RAG Query Processing]
+    D -->|Complaint/Complex| G[Transfer to human]
+    
+    E --> H[Check calendar availability]
+    H --> I{Available?}
+    I -->|Yes| J[Book reservation]
+    I -->|No| K[Suggest alternatives]
+    
+    J --> L[Send confirmation SMS/Email]
+    L --> M[End call successfully]
+    
+    F --> N[Provide information]
+    N --> O{Follow-up needed?}
+    O -->|Yes| E
+    O -->|No| M
+    
+    K --> P{Accept alternative?}
+    P -->|Yes| J
+    P -->|No| Q[Collect contact for waitlist]
+    Q --> M
+Detailed User Scenarios
+Scenario 1: Standard Reservation
+Customer: "Hi, I'd like to make a reservation for tonight."
+Sofia: "I'd be happy to help! What time works best for you and how many people?"
+Customer: "7 PM for 4 people."
+Sofia: "Let me check... I have availability at 7 PM for 4 people. Can I get a name and phone number?"
+Customer: "John Smith, 555-0123"
+Sofia: "Perfect! I've booked a table for 4 at 7 PM under John Smith. You'll receive a confirmation text shortly. Is there anything else I can help with?"
+
+
+Scenario 2: FAQ Inquiry
+Customer: "What's your wine selection like?"
+Sofia: "We have an extensive wine list featuring both Italian and local wines. Our sommelier-selected collection includes Chianti, Pinot Grigio, and Barolo. We also offer wine pairings with our dinner menu. Would you like me to book a table so you can explore our wine selection?"
+4. Core Features
+4.1 Voice Processing
+* Inbound Call Handling: Automatic call pickup with professional greeting
+* Speech-to-Text: Real-time transcription of customer speech
+* Text-to-Speech: Natural voice responses with restaurant personality
+* Multi-language Support: English + Spanish (Phase 2)
+4.2 Intelligent Conversation
+* Intent Classification: Reservation, FAQ, complaint, transfer request
+* Context Awareness: Maintains conversation state throughout call
+* Personality Matching: Friendly, professional restaurant tone
+* Error Handling: Graceful handling of unclear speech or requests
+4.3 Intelligent FAQ System
+* Knowledge Base: Vector Database (powered by Vectorize.io) for semantic search
+* Contextual Responses: GPT-4 powered information retrieval
+* Multi-Modal Knowledge: Menu items, policies, hours, and contextual information
+* Query Expansion: Handle variations and synonyms through vector similarity
+* Confidence Scoring: Measure response accuracy and fallback appropriately
+4.4 Reservation Management
+* Real-time Availability: Live calendar integration
+* Booking Confirmation: Immediate reservation creation
+* Conflict Prevention: Double-booking protection
+* Flexible Scheduling: Handle specific times or "around 7 PM" requests
+4.5 Customer Communication
+* SMS Confirmations: Instant text message with reservation details
+* Email Receipts: Formatted confirmation emails
+* Reminder System: 24-hour advance reminders
+* Cancellation Handling: Easy modification process
+ System Architecture
+5.1 High-Level Architecture
+  
+
+6. Technical Stack
+6.1 Core Technologies (possibilities)
+Backend Framework
+* Runtime: Node.js 18+
+* Framework: Express.js 4.x
+* Language: JavaScript
+Voice & Communication
+* Voice Processing: Twilio Voice API
+* Speech-to-Text: OpenAI Whisper API (via Twilio)
+* Text-to-Speech: Twilio built-in TTS
+* SMS: Twilio Messaging
+* Email: SendGrid API
+AI & ML
+* LLM: OpenAI GPT-4
+* Knowledge Retrieval: Direct context injection (no vector DB needed)
+* Intent Classification: GPT-4 prompt engineering
+Data & Storage
+* Database: SQLite (single file, zero-config)
+* Document Store: JSON files for restaurant data
+* Session Storage: In-memory for active calls
+External Integrations
+Calendar: Google Calendar API
+Messaging : Twilio for SMS?

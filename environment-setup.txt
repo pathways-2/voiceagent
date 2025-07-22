@@ -1,0 +1,53 @@
+# Environment Setup for Rooney Voice Agent
+
+Create a .env file in the root directory with the following variables:
+
+# Twilio Configuration
+TWILIO_ACCOUNT_SID=your_twilio_account_sid
+TWILIO_AUTH_TOKEN=your_twilio_auth_token
+TWILIO_PHONE_NUMBER=your_twilio_phone_number
+
+# OpenAI Configuration
+OPENAI_API_KEY=your_openai_api_key
+
+# Vectorize.io Configuration (for RAG FAQ system)
+VECTORIZE_PIPELINE_ACCESS_TOKEN=your_vectorize_pipeline_access_token
+VECTORIZE_ORGANIZATION_ID=your_organization_id
+VECTORIZE_PIPELINE_ID=your_pipeline_id
+
+# Google Calendar Configuration (optional)
+GOOGLE_CALENDAR_CLIENT_ID=your_google_client_id
+GOOGLE_CALENDAR_CLIENT_SECRET=your_google_client_secret
+GOOGLE_CALENDAR_REDIRECT_URI=your_redirect_uri
+GOOGLE_CALENDAR_REFRESH_TOKEN=your_refresh_token
+
+# SendGrid Configuration (for email confirmations)
+SENDGRID_API_KEY=your_sendgrid_api_key
+FROM_EMAIL=reservations@sylvieskitchen.com
+
+# Server Configuration
+PORT=3000
+NODE_ENV=development
+
+# Restaurant Configuration
+RESTAURANT_NAME="Sylvie's Kitchen"
+RESTAURANT_PHONE="+1234567890"
+RESTAURANT_EMAIL="info@sylvieskitchen.com"
+RESTAURANT_ADDRESS="123 Main St, Your City, State 12345"
+
+# Database
+DATABASE_PATH=./data/reservations.db
+
+## Setup Instructions:
+
+1. Copy this file to .env in your project root
+2. Replace placeholder values with your actual API keys and configuration
+3. Sign up for required services:
+   - Twilio (for voice and SMS)
+   - OpenAI (for AI conversation)
+   - Vectorize.io (for RAG FAQ system)
+   - SendGrid (for email confirmations)
+4. Run `npm install` to install dependencies
+5. Run `npm run setup-db` to initialize the database
+6. Run `npm run seed-vector-db` to populate the RAG knowledge base
+7. Run `npm start` to start the server 
