@@ -8,6 +8,7 @@ require('dotenv').config();
 const voiceRoutes = require('./routes/voice');
 const reservationRoutes = require('./routes/reservations');
 const webhookRoutes = require('./routes/webhooks');
+const chatRoutes = require('./routes/chat');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -15,8 +16,16 @@ const PORT = process.env.PORT || 3000;
 // Trust proxy for ngrok and other proxies (but be specific)
 app.set('trust proxy', ['127.0.0.1', '::1']);
 
-// Security middleware
-app.use(helmet());
+// Security middleware (relaxed for development chat interface)
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      ...helmet.contentSecurityPolicy.getDefaultDirectives(),
+      "script-src": ["'self'", "'unsafe-inline'"], // Allow inline scripts for chat interface
+      "style-src": ["'self'", "'unsafe-inline'", "https:"]
+    }
+  }
+}));
 app.use(cors());
 
 // Rate limiting (more permissive for development with ngrok)
@@ -32,10 +41,19 @@ app.use(limiter);
 app.use(bodyParser.urlencoded({ extended: false }));
 app.use(bodyParser.json());
 
+// Static files (for chat interface)
+app.use('/static', express.static('public'));
+
 // Routes
 app.use('/voice', voiceRoutes);
 app.use('/reservations', reservationRoutes);
 app.use('/webhooks', webhookRoutes);
+app.use('/chat', chatRoutes);
+
+// Root route - redirect to chat interface
+app.get('/', (req, res) => {
+  res.redirect('/static/chat.html');
+});
 
 // Health check endpoint
 app.get('/health', (req, res) => {

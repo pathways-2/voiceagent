@@ -89,7 +89,6 @@ class VoiceProcessor {
             this.conversationManager.resetConversationContext(callSid);
 
             response.message = reservationResult.message + ` Your reservation is confirmed! You'll receive a text message with the details shortly. Is there anything else I can help you with today?`;
-            response.conversationComplete = false; // Keep conversation going
             response.needsMoreInput = true; // Wait for user response
             // Clear any AI-generated follow-up questions since reservation is complete
             response.followUpQuestion = null; // Already asked in main message
@@ -196,49 +195,39 @@ class VoiceProcessor {
 
   async checkReservationAvailability(reservationData, customerPhone, callSid) {
     try {
-      // Check availability for the requested time
+      console.log('🔍 Checking reservation availability...', {
+        date: reservationData.date,
+        time: reservationData.time,
+        partySize: reservationData.partySize
+      });
+
+      // Get session hours from conversation context
+      const sessionHours = this.conversationManager.getSessionHours(callSid);
+      console.log('📅 Using session hours for availability check:', sessionHours ? 'Yes (from RAG)' : 'No (fallback)');
+
       const availability = await this.reservationManager.checkAvailability(
         reservationData.date,
         reservationData.time,
-        reservationData.partySize
-      );
-
-      if (availability.available) {
-        return {
-          available: true,
-          message: `Perfect! I have availability for ${reservationData.partySize} people.`
-        };
-      }
-
-      // Not available - suggest alternatives within 2 hours for same party size
-      const alternatives = await this.getAlternativeTimesWithinRange(
-        reservationData.date,
-        reservationData.time,
         reservationData.partySize,
-        2 // 2 hours range
+        sessionHours // Pass session hours from RAG
       );
 
-      if (alternatives.length > 0) {
-        const formattedAlternatives = alternatives.map(time => this.formatTime(time));
-        return {
-          available: false,
-          message: `${availability.reason} However, I do have availability for ${reservationData.partySize} people at ${formattedAlternatives.join(', ')}. Would any of these times work for you?`,
-          followUpQuestion: "Which time would you prefer, or would you like to try a different date?"
-        };
-      } else {
-        return {
-          available: false,
-          message: `${availability.reason} I don't have any availability for ${reservationData.partySize} people within 2 hours of your requested time.`,
-          followUpQuestion: "Would you like to try a different date, or would a different party size work?"
-        };
-      }
+      return {
+        available: availability.available,
+        message: availability.message || availability.reason,
+        followUpQuestion: availability.followUpQuestion,
+        alternatives: availability.alternatives || [],
+        tableId: availability.tableId
+      };
 
     } catch (error) {
-      console.error('Error checking availability:', error);
+      console.error('❌ Error checking availability:', error);
+      
       return {
         available: false,
-        message: "I'm having trouble checking our availability right now. Let me transfer you to someone who can help.",
-        followUpQuestion: null
+        message: "I'm sorry, I'm having trouble checking our availability right now. Please try again or call us directly.",
+        followUpQuestion: "Would you like me to transfer you to someone who can help?",
+        alternatives: []
       };
     }
   }
@@ -297,41 +286,53 @@ class VoiceProcessor {
 
   async handleReservationBooking(reservationData, customerPhone, callSid) {
     try {
-      // Check availability
-      const availability = await this.reservationManager.checkAvailability(
-        reservationData.date,
-        reservationData.time,
-        reservationData.partySize
-      );
-
-      if (!availability.available) {
-        return {
-          success: false,
-          message: `I'm sorry, but we don't have availability at ${reservationData.time} on ${reservationData.date}. ${availability.alternatives ? 'May I suggest: ' + availability.alternatives.join(', ') + '?' : 'Would you like to try a different time?'}`
-        };
-      }
-
-      // Create reservation
-      const reservation = await this.reservationManager.createReservation({
-        ...reservationData,
-        customerPhone: customerPhone || reservationData.customerPhone,
-        callSid,
-        source: 'voice_call',
-        status: 'confirmed'
+      console.log('📝 Processing reservation booking...', {
+        customerName: reservationData.customerName,
+        partySize: reservationData.partySize,
+        date: reservationData.date,
+        time: reservationData.time
       });
 
-      return {
-        success: true,
-        reservation,
-        message: `Perfect! I've successfully booked your table for ${reservationData.partySize} people on ${reservationData.date} at ${reservationData.time} under the name ${reservationData.customerName}.`
-      };
+      console.log('✅ Availability already confirmed - proceeding directly to booking');
+
+      // Create the reservation directly (availability was already confirmed)
+      const reservation = await this.reservationManager.createReservation({
+        customerName: reservationData.customerName,
+        customerPhone: reservationData.customerPhone,
+        customerEmail: reservationData.customerEmail || null,
+        partySize: parseInt(reservationData.partySize),
+        date: reservationData.date,
+        time: reservationData.time,
+        specialRequests: reservationData.specialRequests || null,
+        source: 'voice_call',
+        callSid: callSid
+      });
+
+      if (reservation && reservation.id) {
+        const confirmationMessage = `Perfect! I've successfully booked your table for ${reservation.partySize} people on ${this.formatDate(reservation.date)} at ${this.formatTime(reservation.time)} under the name ${reservation.customerName}.`;
+        
+        return {
+          success: true,
+          message: confirmationMessage,
+          reservation: {
+            id: reservation.id,
+            customerName: reservation.customerName,
+            partySize: reservation.partySize,
+            date: reservation.date,
+            time: reservation.time,
+            customerPhone: reservationData.customerPhone
+          }
+        };
+      } else {
+        throw new Error('Reservation creation failed - no ID returned');
+      }
 
     } catch (error) {
-      console.error('Error creating reservation:', error);
+      console.error('❌ Error creating reservation:', error);
       
       return {
         success: false,
-        message: "I'm having trouble accessing our reservation system right now. Let me transfer you to someone who can help you complete your booking."
+        message: "I'm sorry, there was an issue completing your reservation. Please try again or call us directly to book your table."
       };
     }
   }

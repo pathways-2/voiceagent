@@ -22,7 +22,7 @@ class RAGService {
   /**
    * Search the vector database for relevant FAQ information
    */
-  async searchFAQ(query, topK = 5, threshold = 0.5) { // Lowered threshold from 0.7 to 0.5
+  async searchFAQ(query, topK = 5, threshold = 0.1) { // Lowered threshold to allow more relevant results
     try {
       console.log('🔍 RAG search for:', query);
 
@@ -151,19 +151,18 @@ class RAGService {
       
       const prompt = `You are Rooney, the friendly voice assistant for Sylvie's Kitchen restaurant. 
       
-Use the following restaurant information to answer the customer's question naturally and helpfully:
+Use the following restaurant information to answer the customer's question:
 
 RESTAURANT CONTEXT:
 ${context}
 
 CUSTOMER QUESTION: ${query}
 
-Instructions:
-- Provide a warm, conversational response
-- Use the context information to give accurate details
-- If the context doesn't fully answer the question, be honest and offer to transfer to staff
-- Keep responses concise but complete
-- Always maintain the friendly, professional tone of Sylvie's Kitchen
+CRITICAL INSTRUCTIONS:
+- Answer in EXACTLY 25 words or less
+- Be direct and concise for voice interface
+- End with "For complete details, visit our website or ask our staff."
+- Do not list multiple items or long descriptions
 
 RESPONSE:`;
 
@@ -171,7 +170,7 @@ RESPONSE:`;
         model: 'gpt-4',
         messages: [{ role: 'user', content: prompt }],
         temperature: 0.7,
-        max_tokens: 200
+        max_tokens: 50
       });
 
       return {
@@ -203,18 +202,18 @@ RESPONSE:`;
   async getFallbackResponse(query) {
     const queryLower = query.toLowerCase();
     
-    // Provide basic accurate information as backup, but encourage RAG/human transfer
+    // Provide basic information when available, otherwise acknowledge limitation and reset conversation
     if (queryLower.includes('menu') || queryLower.includes('food') || queryLower.includes('dish')) {
-      return "We specialize in Asian Fusion cuisine with dishes like Korean Fried Chicken Wings, Crispy Pork Belly Bao, and Tom Kha Coconut Soup. For our complete menu with current pricing, let me connect you with our team who can share all the delicious details. Would you like me to transfer your call?";
+      return "We specialize in Asian Fusion cuisine with dishes like Korean Fried Chicken Wings, Crispy Pork Belly Bao, and Tom Kha Coconut Soup. I don't have our complete current menu details available. Is there anything else I can help you with, or would you like to make a reservation?";
     } else if (queryLower.includes('hour') || queryLower.includes('open') || queryLower.includes('close')) {
-      return "I don't have our current hours readily available. Let me connect you with our team who can confirm our operating hours and help with any other questions. Would you like me to transfer your call?";
+      return "I don't have our current operating hours readily available. Is there anything else I can help you with, or would you like to make a reservation?";
     } else if (queryLower.includes('location') || queryLower.includes('address') || queryLower.includes('where')) {
-      return "We're located in Seattle. For exact address and directions, let me connect you with our team who can help you find us easily. Would you like me to transfer your call?";
+      return "We're located in Seattle. I don't have the exact address details available right now. Is there anything else I can help you with, or would you like to make a reservation?";
     } else if (queryLower.includes('reservation') || queryLower.includes('book') || queryLower.includes('table')) {
       return "I'd be happy to help you with a reservation! What date, time, and party size were you thinking?";
     }
     
-    return "I don't have specific information about that in my database right now. Let me connect you with one of our team members who can help you with detailed information. Would you like me to transfer your call?";
+    return "I don't have that information currently. Is there anything else I can help you with, or would you like to make a reservation?";
   }
 
   /**

@@ -24,7 +24,7 @@ router.post('/incoming', async (req, res) => {
       input: 'speech',
       action: '/voice/process-speech',
       method: 'POST',
-      speechTimeout: 10, // 10 seconds timeout
+      speechTimeout: 5, // 5 seconds timeout
       language: 'en-US',
       hints: 'reservation, table, booking, menu, hours, wine, dinner, lunch'
     });
@@ -35,7 +35,7 @@ router.post('/incoming', async (req, res) => {
       language: 'en-US'
     }, greeting);
     
-    // Fallback if no input after 10 seconds
+    // Fallback if no input after 5 seconds
     twiml.say({
       voice: 'alice',
       language: 'en-US'

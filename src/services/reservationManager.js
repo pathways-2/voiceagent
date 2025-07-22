@@ -15,9 +15,9 @@ class ReservationManager {
         tuesday: { open: '17:00', close: '22:00' },
         wednesday: { open: '17:00', close: '22:00' },
         thursday: { open: '17:00', close: '22:00' },
-        friday: { open: '17:00', close: '22:00' },
-        saturday: { open: '17:00', close: '22:00' },
-        sunday: { open: '17:00', close: '22:00' },
+        friday: { open: '17:00', close: '23:00' },
+        saturday: { open: '17:00', close: '23:00' },
+        sunday: { open: '16:30', close: '21:30' },
         monday: null // Closed
       },
       maxPartySize: 8,
@@ -87,7 +87,7 @@ class ReservationManager {
     });
   }
 
-  async checkAvailability(date, time, partySize) {
+  async checkAvailability(date, time, partySize, sessionHours = null) {
     return new Promise((resolve, reject) => {
       // Validate inputs - ensure we have a valid date
       let reservationMoment;
@@ -127,13 +127,24 @@ class ReservationManager {
       const dayOfWeek = reservationMoment.format('dddd').toLowerCase();
       console.log(`🗓️ Checking availability for ${dayOfWeek}, ${date} at ${time}`);
       
+      // Use session hours if provided, otherwise fall back to hardcoded config
+      let hours;
+      if (sessionHours && sessionHours[dayOfWeek]) {
+        hours = sessionHours[dayOfWeek];
+        console.log(`📖 Using session hours from RAG: ${JSON.stringify(hours)}`);
+      } else {
+        hours = this.restaurantConfig.openHours[dayOfWeek];
+        console.log(`⚠️ Falling back to hardcoded hours: ${JSON.stringify(hours)}`);
+      }
+      
       // Check if restaurant is open
-      const hours = this.restaurantConfig.openHours[dayOfWeek];
-      if (!hours) {
+      if (!hours || hours.status === 'closed') {
+        // Get hours display info for better error message
+        const hoursInfo = this.getHoursDisplayMessage(sessionHours);
         resolve({
           available: false,
-          reason: 'We are closed on Mondays. We are open Tuesday through Sunday from 5 PM to 10 PM.',
-          alternatives: this.getSuggestedAlternatives(date, time, partySize)
+          reason: hoursInfo.closedMessage,
+          alternatives: this.getSuggestedAlternatives(date, time, partySize, sessionHours)
         });
         return;
       }
@@ -144,10 +155,11 @@ class ReservationManager {
       const closeTime = moment(hours.close, 'HH:mm');
       
       if (requestTime.isBefore(openTime) || requestTime.isAfter(closeTime)) {
+        const displayHours = hours.display || `${moment(hours.open, 'HH:mm').format('h:mm A')} to ${moment(hours.close, 'HH:mm').format('h:mm A')}`;
         resolve({
           available: false,
-          reason: `We are open from ${moment(hours.open, 'HH:mm').format('h:mm A')} to ${moment(hours.close, 'HH:mm').format('h:mm A')} on ${dayOfWeek}s.`,
-          alternatives: this.getSuggestedAlternatives(date, time, partySize)
+          reason: `We are open from ${displayHours} on ${dayOfWeek}s.`,
+          alternatives: this.getSuggestedAlternatives(date, time, partySize, sessionHours)
         });
         return;
       }
@@ -187,7 +199,7 @@ class ReservationManager {
             message: `Table for ${partySize} available at ${moment(time, 'HH:mm').format('h:mm A')} on ${moment(date).format('dddd, MMMM Do')}`
           });
         } else {
-          const alternatives = this.getSuggestedAlternatives(date, time, partySize);
+          const alternatives = this.getSuggestedAlternatives(date, time, partySize, sessionHours);
           const alternativeText = alternatives.length > 0 
             ? ` I don't have any availability for ${partySize} people within 2 hours of your requested time.`
             : ' Unfortunately, we are fully booked around that time.';
@@ -202,21 +214,75 @@ class ReservationManager {
     });
   }
 
-  // Removed findAvailableTable - now using simple reservation count system
+  getHoursDisplayMessage(sessionHours) {
+    if (sessionHours) {
+      // Use session hours for accurate messaging
+      const openDays = [];
+      const days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+      
+      for (const day of days) {
+        const dayHours = sessionHours[day];
+        if (dayHours && dayHours.status !== 'closed') {
+          openDays.push(`${day.charAt(0).toUpperCase() + day.slice(1)}: ${dayHours.display}`);
+        }
+      }
+      
+      const closedDays = days.filter(day => 
+        sessionHours[day] && sessionHours[day].status === 'closed'
+      ).map(day => day.charAt(0).toUpperCase() + day.slice(1));
+      
+      let message = '';
+      if (closedDays.length > 0) {
+        message = `We are closed on ${closedDays.join(' and ')}${closedDays.length === 1 ? '' : 's'}. `;
+      }
+      
+      if (openDays.length > 0) {
+        message += `Our hours are: ${openDays.slice(0, 2).join(', ')}`;
+        if (openDays.length > 2) {
+          message += `, and similar hours other days`;
+        }
+        message += '.';
+      }
+      
+      return {
+        closedMessage: message,
+        fullHours: sessionHours
+      };
+    } else {
+      // Fallback to hardcoded message
+      return {
+        closedMessage: 'We are closed on Mondays. We are open Tuesday through Sunday from 5 PM to 10 PM.',
+        fullHours: null
+      };
+    }
+  }
 
-  getSuggestedAlternatives(date, time, partySize) {
+  getSuggestedAlternatives(date, time, partySize, sessionHours = null) {
     // Simple algorithm to suggest nearby times
     const requestTime = moment(time, 'HH:mm');
     const alternatives = [];
     
     console.log(`🔍 Looking for alternatives to ${time} for ${partySize} people`);
     
+    // Determine available time slots based on session hours or fallback
+    let timeSlots = this.restaurantConfig.timeSlots;
+    
+    if (sessionHours) {
+      const dayOfWeek = moment(date).format('dddd').toLowerCase();
+      const dayHours = sessionHours[dayOfWeek];
+      
+      if (dayHours && dayHours.status !== 'closed') {
+        // Generate time slots based on actual hours
+        timeSlots = this.generateTimeSlotsFromHours(dayHours.open, dayHours.close);
+      }
+    }
+    
     // Check 30 minutes before and after, then 60 minutes
     for (let offset of [-30, 30, -60, 60, -90, 90]) {
       const altTime = moment(requestTime).add(offset, 'minutes');
       const altTimeStr = altTime.format('HH:mm');
       
-      if (this.restaurantConfig.timeSlots.includes(altTimeStr)) {
+      if (timeSlots.includes(altTimeStr)) {
         // Convert to user-friendly format (7:00 PM instead of 19:00)
         const displayTime = altTime.format('h:mm A');
         alternatives.push(displayTime);
@@ -227,6 +293,21 @@ class ReservationManager {
     console.log(`💡 Suggesting alternatives: ${finalAlternatives.join(', ')}`);
     
     return finalAlternatives;
+  }
+
+  generateTimeSlotsFromHours(openTime, closeTime) {
+    const slots = [];
+    const start = moment(openTime, 'HH:mm');
+    const end = moment(closeTime, 'HH:mm').subtract(30, 'minutes'); // Stop 30 min before close
+    
+    const current = start.clone();
+    while (current.isSameOrBefore(end)) {
+      slots.push(current.format('HH:mm'));
+      current.add(30, 'minutes');
+    }
+    
+    console.log(`⏰ Generated time slots from ${openTime}-${closeTime}:`, slots);
+    return slots;
   }
 
   async createReservation(reservationData) {
@@ -244,64 +325,77 @@ class ReservationManager {
         callSid
       } = reservationData;
 
-      // First, check availability and get table
-      this.checkAvailability(date, time, partySize)
-        .then(availability => {
-          if (!availability.available) {
-            reject(new Error(availability.reason));
-            return;
+      console.log('💾 Creating reservation directly (availability already confirmed)');
+
+      // Get current reservation count for table ID assignment
+      const countQuery = `
+        SELECT COUNT(*) as count 
+        FROM reservations 
+        WHERE reservation_date = ? 
+        AND reservation_time = ? 
+        AND status != 'cancelled'
+      `;
+
+      this.db.get(countQuery, [date, time], (err, row) => {
+        if (err) {
+          reject(err);
+          return;
+        }
+
+        const currentReservations = row.count || 0;
+        const tableId = currentReservations + 1;
+
+        console.log(`📊 Assigning table ID ${tableId} for ${date} ${time}`);
+
+        const insertQuery = `
+          INSERT INTO reservations (
+            id, customer_name, customer_phone, customer_email,
+            party_size, reservation_date, reservation_time, table_id,
+            special_requests, source, call_sid
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `;
+
+        this.db.run(insertQuery, [
+          reservationId,
+          customerName,
+          customerPhone,
+          customerEmail || null,
+          partySize,
+          date,
+          time,
+          tableId,
+          specialRequests || null,
+          source || 'voice_call',
+          callSid || null
+        ], (err) => {
+          if (err) {
+            reject(err);
+          } else {
+            // Update customer record
+            const customerQuery = `
+              INSERT OR REPLACE INTO customers (phone, name, email, visit_count, last_visit)
+              VALUES (?, ?, ?, 
+                COALESCE((SELECT visit_count FROM customers WHERE phone = ?) + 1, 1),
+                ?)
+            `;
+            
+            this.db.run(customerQuery, [
+              customerPhone, customerName, customerEmail, customerPhone, date
+            ]);
+
+            resolve({
+              id: reservationId,
+              customerName,
+              customerPhone,
+              partySize,
+              date,
+              time,
+              tableId: tableId,
+              status: 'confirmed'
+            });
           }
-
-          const query = `
-            INSERT INTO reservations (
-              id, customer_name, customer_phone, customer_email,
-              party_size, reservation_date, reservation_time, table_id,
-              special_requests, source, call_sid
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-          `;
-
-          this.db.run(query, [
-            reservationId,
-            customerName,
-            customerPhone,
-            customerEmail || null,
-            partySize,
-            date,
-            time,
-            availability.tableId,
-            specialRequests || null,
-            source || 'voice_call',
-            callSid || null
-          ], (err) => {
-            if (err) {
-              reject(err);
-            } else {
-              // Update customer record
-              const customerQuery = `
-                INSERT OR REPLACE INTO customers (phone, name, email, visit_count, last_visit)
-                VALUES (?, ?, ?, 
-                  COALESCE((SELECT visit_count FROM customers WHERE phone = ?) + 1, 1),
-                  ?)
-              `;
-              
-              this.db.run(customerQuery, [
-                customerPhone, customerName, customerEmail, customerPhone, date
-              ]);
-
-              resolve({
-                id: reservationId,
-                customerName,
-                customerPhone,
-                partySize,
-                date,
-                time,
-                tableId: availability.tableId,
-                status: 'confirmed'
-              });
-            }
-          });
-        })
-        .catch(reject);
+        });
+      });
     });
   }
 

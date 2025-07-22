@@ -72,7 +72,7 @@ async function testSystem() {
       console.log('✅ RAG service status:', healthCheck.status);
       
       // Test a simple FAQ search
-      const searchResult = await ragService.searchFAQ('wine selection', 3, 0.5);
+      const searchResult = await ragService.searchFAQ('wine selection', 3, 0.1);
       console.log('✅ FAQ search:', searchResult.success ? 'Success' : 'Failed');
     } catch (error) {
       console.log('❌ RAG service failed:', error.message);

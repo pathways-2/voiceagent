@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rooney Chat - Debug Version</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; background: #f5f5f5; }
+        .container { max-width: 800px; margin: 0 auto; background: white; padding: 20px; border-radius: 10px; }
+        .messages { height: 400px; overflow-y: auto; border: 1px solid #ddd; padding: 15px; margin-bottom: 20px; background: #fafafa; }
+        .message { margin-bottom: 15px; padding: 8px; border-radius: 5px; }
+        .user { background: #007bff; color: white; text-align: right; }
+        .bot { background: #e9ecef; color: #333; }
+        .input-area { display: flex; gap: 10px; margin-bottom: 10px; }
+        input[type="text"] { flex: 1; padding: 10px; border: 1px solid #ddd; border-radius: 5px; }
+        button { padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; }
+        .send-btn { background: #007bff; color: white; }
+        .reset-btn { background: #dc3545; color: white; }
+        .debug { margin-top: 20px; padding: 15px; background: #f8f9fa; border: 1px solid #dee2e6; border-radius: 5px; }
+        .debug h4 { margin-top: 0; color: #495057; }
+        .debug-log { font-family: monospace; font-size: 12px; color: #666; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🍽️ Rooney - Debug Chat Interface</h1>
+        <p>Testing version with enhanced debugging</p>
+
+        <div class="messages" id="messages">
+            <div class="message bot">
+                Hello! I'm Rooney. Type a message and press Enter or click Send. This is the debug version with console logging.
+            </div>
+        </div>
+
+        <div class="input-area">
+            <button class="reset-btn" id="resetBtn">Reset</button>
+            <input type="text" id="messageInput" placeholder="Type your message here and press Enter...">
+            <button class="send-btn" id="sendBtn">Send</button>
+        </div>
+
+        <div class="debug">
+            <h4>Debug Information</h4>
+            <div class="debug-log" id="debugLog">
+                Ready - JavaScript loaded successfully<br>
+            </div>
+        </div>
+
+        <div style="margin-top: 15px;">
+            <button onclick="testMessage('What are your hours?')" style="margin: 5px; padding: 5px 10px;">Test: Hours</button>
+            <button onclick="testMessage('I need a reservation')" style="margin: 5px; padding: 5px 10px;">Test: Reservation</button>
+            <button onclick="testMessage('Tell me about your menu')" style="margin: 5px; padding: 5px 10px;">Test: Menu</button>
+        </div>
+    </div>
+
+    <script>
+        let sessionId = null;
+        
+        function addToDebug(message) {
+            const debugLog = document.getElementById('debugLog');
+            const timestamp = new Date().toLocaleTimeString();
+            debugLog.innerHTML += `[${timestamp}] ${message}<br>`;
+            debugLog.scrollTop = debugLog.scrollHeight;
+            console.log(`[${timestamp}] ${message}`);
+        }
+
+        function addMessage(content, isUser = false) {
+            const messagesDiv = document.getElementById('messages');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${isUser ? 'user' : 'bot'}`;
+            messageDiv.textContent = content;
+            messagesDiv.appendChild(messageDiv);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+            
+            addToDebug(`Message added: ${isUser ? 'USER' : 'BOT'}: ${content.substring(0, 50)}...`);
+        }
+
+        async function sendMessage(messageText = null) {
+            const input = document.getElementById('messageInput');
+            const sendBtn = document.getElementById('sendBtn');
+            
+            const message = messageText || input.value.trim();
+            
+            addToDebug(`sendMessage called with: "${message}"`);
+            
+            if (!message) {
+                addToDebug('Empty message - returning');
+                return;
+            }
+
+            // Add user message
+            addMessage(message, true);
+            input.value = '';
+            sendBtn.disabled = true;
+            
+            addToDebug('Sending request to /chat/message...');
+
+            try {
+                const response = await fetch('/chat/message', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        message: message,
+                        sessionId: sessionId
+                    })
+                });
+
+                addToDebug(`Response status: ${response.status}`);
+
+                const data = await response.json();
+                addToDebug(`Response data: ${JSON.stringify(data).substring(0, 100)}...`);
+
+                if (data.success) {
+                    sessionId = data.sessionId;
+                    addMessage(data.response);
+                    addToDebug('Success - bot response added');
+                } else {
+                    addMessage('Error: ' + (data.error || 'Unknown error'));
+                    addToDebug('Error in response: ' + data.error);
+                }
+
+            } catch (error) {
+                addMessage('Connection error: ' + error.message);
+                addToDebug('Fetch error: ' + error.message);
+                console.error('Chat error:', error);
+            }
+
+            sendBtn.disabled = false;
+        }
+
+        function testMessage(msg) {
+            addToDebug(`Test button clicked: ${msg}`);
+            sendMessage(msg);
+        }
+
+        function resetChat() {
+            addToDebug('Reset button clicked');
+            const messagesDiv = document.getElementById('messages');
+            messagesDiv.innerHTML = '<div class="message bot">Chat reset. How can I help you?</div>';
+            sessionId = null;
+            addToDebug('Chat reset completed');
+        }
+
+        // Set up event listeners
+        document.addEventListener('DOMContentLoaded', function() {
+            addToDebug('DOM loaded - setting up event listeners');
+            
+            const input = document.getElementById('messageInput');
+            const sendBtn = document.getElementById('sendBtn');
+            const resetBtn = document.getElementById('resetBtn');
+
+            // Enter key listener
+            input.addEventListener('keypress', function(event) {
+                addToDebug(`Key pressed: ${event.key}`);
+                if (event.key === 'Enter') {
+                    addToDebug('Enter key detected - calling sendMessage');
+                    sendMessage();
+                }
+            });
+
+            // Send button listener  
+            sendBtn.addEventListener('click', function() {
+                addToDebug('Send button clicked');
+                sendMessage();
+            });
+
+            // Reset button listener
+            resetBtn.addEventListener('click', function() {
+                addToDebug('Reset button clicked');
+                resetChat();
+            });
+
+            input.focus();
+            addToDebug('Event listeners set up successfully');
+        });
+
+        addToDebug('Script loaded successfully');
+    </script>
+</body>
+</html> 
