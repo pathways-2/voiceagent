@@ -339,6 +339,101 @@ router.get('/api/date/:date', async (req, res) => {
   }
 });
 
+// Test Google Calendar connection
+router.get('/test-calendar', async (req, res) => {
+  try {
+    const connectionTest = await reservationManager.testGoogleCalendarConnection();
+    
+    res.json({
+      success: connectionTest.success,
+      message: connectionTest.message,
+      calendarName: connectionTest.calendarName || null
+    });
+  } catch (error) {
+    console.error('Calendar test error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to test Google Calendar connection',
+      details: error.message
+    });
+  }
+});
 
+// Sync with Google Calendar
+router.post('/sync-calendar', async (req, res) => {
+  try {
+    const { startDate, endDate } = req.body;
+    
+    // Default to next 30 days if no dates provided
+    const start = startDate || moment().format('YYYY-MM-DD');
+    const end = endDate || moment().add(30, 'days').format('YYYY-MM-DD');
+    
+    const syncResult = await reservationManager.syncWithGoogleCalendar(start, end);
+    
+    res.json({
+      success: syncResult.success,
+      message: syncResult.success ? 'Calendar sync completed' : 'Calendar sync failed',
+      events: syncResult.events || [],
+      count: syncResult.count || 0,
+      error: syncResult.error || null,
+      period: { start, end }
+    });
+  } catch (error) {
+    console.error('Calendar sync error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to sync with Google Calendar',
+      details: error.message
+    });
+  }
+});
+
+// Update reservation (includes Google Calendar sync)
+router.put('/:id', async (req, res) => {
+  try {
+    const reservationId = req.params.id;
+    const updates = req.body;
+    
+    const updateResult = await reservationManager.updateReservation(reservationId, updates);
+    
+    res.json({
+      success: updateResult.success,
+      message: 'Reservation updated successfully',
+      id: updateResult.id
+    });
+  } catch (error) {
+    console.error('Error updating reservation:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to update reservation',
+      details: error.message
+    });
+  }
+});
+
+// Cancel reservation (includes Google Calendar event deletion)
+router.delete('/:id', async (req, res) => {
+  try {
+    const reservationId = req.params.id;
+    const { reason } = req.body;
+    
+    const cancelResult = await reservationManager.cancelReservation(reservationId, reason);
+    
+    res.json({
+      success: cancelResult.success,
+      message: 'Reservation cancelled successfully',
+      id: cancelResult.id,
+      status: cancelResult.status,
+      reason: cancelResult.reason
+    });
+  } catch (error) {
+    console.error('Error cancelling reservation:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to cancel reservation',
+      details: error.message
+    });
+  }
+});
 
 module.exports = router; 

@@ -24,8 +24,13 @@ class VoiceProcessor {
       if (response.intent === 'reservation') {
         console.log('🎯 Reservation intent detected. Extracted data:', response.extractedData);
         
-        const hasBasicInfo = this.hasBasicReservationInfo(response.extractedData);
-        const isComplete = this.isReservationComplete(response.extractedData);
+        // Get full conversation context to merge data from all messages
+        const conversation = await this.conversationManager.getConversation(callSid);
+        const fullReservationData = { ...conversation.context, ...response.extractedData };
+        console.log('📋 Full reservation context:', fullReservationData);
+        
+        const hasBasicInfo = this.hasBasicReservationInfo(fullReservationData);
+        const isComplete = this.isReservationComplete(fullReservationData);
         
         console.log('🔍 Reservation status:', {
           hasBasicInfo: hasBasicInfo,
@@ -37,8 +42,16 @@ class VoiceProcessor {
           // CHECK AVAILABILITY FIRST before asking for personal details
           console.log('✅ Basic reservation info complete, checking availability before asking for personal details...');
           
-          const normalizedData = this.normalizeReservationData(response.extractedData);
+          const normalizedData = this.normalizeReservationData(fullReservationData);
           console.log('🔄 Normalized basic data for availability check:', normalizedData);
+          
+          // Check for date parsing errors
+          if (normalizedData.dateParseError) {
+            response.message = normalizedData.dateParseError;
+            response.needsMoreInput = true;
+            response.followUpQuestion = "Please tell me the date you'd like to dine with us.";
+            return response;
+          }
           
           const availabilityResult = await this.checkReservationAvailability(
             normalizedData, 
@@ -50,9 +63,31 @@ class VoiceProcessor {
           
           if (availabilityResult.available) {
             // Time slot is available, now ask for personal details
-            response.message = `Great! I have availability for ${normalizedData.partySize} people on ${this.formatDate(normalizedData.date)} at ${this.formatTime(normalizedData.time)}. May I please get your name and phone number to complete the reservation?`;
+            // Check what's actually missing and ask only for that
+            const hasName = !!(fullReservationData.name || fullReservationData.customerName);
+            const hasPhone = !!(fullReservationData.phone || fullReservationData.customerPhone);
+            
+            let missingInfo = [];
+            let followUpQuestion = "";
+            
+            if (!hasName && !hasPhone) {
+              missingInfo = ["your name", "phone number"];
+              followUpQuestion = "What name should I put the reservation under, and what's the best phone number to reach you?";
+            } else if (!hasName) {
+              missingInfo = ["your name"];
+              followUpQuestion = "What name should I put the reservation under?";
+            } else if (!hasPhone) {
+              missingInfo = ["your phone number"];
+              followUpQuestion = "What's the best phone number to reach you?";
+            }
+            
+            const missingText = missingInfo.length === 2 ? 
+              `${missingInfo[0]} and ${missingInfo[1]}` : 
+              missingInfo[0];
+            
+            response.message = `Great! I have availability for ${normalizedData.partySize} people on ${this.formatDate(normalizedData.date)} at ${this.formatTime(normalizedData.time)}. May I please get ${missingText} to complete the reservation?`;
             response.needsMoreInput = true;
-            response.followUpQuestion = "What name should I put the reservation under, and what's the best phone number to reach you?";
+            response.followUpQuestion = followUpQuestion;
           } else {
             // Not available, suggest alternatives or ask for different date
             response.message = availabilityResult.message;
@@ -64,8 +99,16 @@ class VoiceProcessor {
           // We have everything, proceed with booking
           console.log('✅ All reservation data complete, proceeding with booking...');
           
-          const normalizedData = this.normalizeReservationData(response.extractedData, customerPhone);
+          const normalizedData = this.normalizeReservationData(fullReservationData, customerPhone);
           console.log('🔄 Normalized complete data for booking:', normalizedData);
+          
+          // Check for date parsing errors
+          if (normalizedData.dateParseError) {
+            response.message = normalizedData.dateParseError;
+            response.needsMoreInput = true;
+            response.followUpQuestion = "Please tell me the date you'd like to dine with us.";
+            return response;
+          }
           
           const reservationResult = await this.handleReservationBooking(
             normalizedData, 
@@ -127,12 +170,12 @@ class VoiceProcessor {
       return false;
     }
     
-    // Check for required fields with flexible naming
-    const hasDate = data.date;
-    const hasTime = data.time;
-    const hasPartySize = data.partySize;
-    const hasName = data.customerName || data.name;
-    const hasPhone = data.customerPhone || data.phone;
+    // Check for required fields with flexible naming (convert to boolean)
+    const hasDate = !!data.date;
+    const hasTime = !!data.time;
+    const hasPartySize = !!data.partySize;
+    const hasName = !!(data.customerName || data.name);
+    const hasPhone = !!(data.customerPhone || data.phone);
     
     console.log('🔍 Reservation completeness check:', {
       hasDate: !!hasDate,
@@ -183,7 +226,17 @@ class VoiceProcessor {
     
     // Normalize date format
     if (normalized.date) {
-      normalized.date = this.normalizeDate(normalized.date);
+      const normalizedDate = this.normalizeDate(normalized.date);
+      if (!normalizedDate) {
+        console.log(`❌ Failed to parse date: "${normalized.date}"`);
+        // Return error state to prevent processing with invalid date
+        return { 
+          ...normalized, 
+          date: null, 
+          dateParseError: `I couldn't understand the date "${normalized.date}". Please specify the date in a format like "July 26", "July 26 2025", or "07/26".`
+        };
+      }
+      normalized.date = normalizedDate;
     }
     
     // Normalize time format  
@@ -191,10 +244,19 @@ class VoiceProcessor {
       normalized.time = this.normalizeTime(normalized.time);
     }
     
-    // Normalize names (for complete reservations)
+    // Normalize names (for complete reservations) - use consistent field names
     if (customerPhone) {
+      // Use consistent field names and avoid duplicates
       normalized.customerName = normalized.customerName || normalized.name;
       normalized.customerPhone = normalized.customerPhone || normalized.phone || customerPhone;
+      
+      // Remove duplicate fields to keep data clean
+      if (normalized.customerName && normalized.name && normalized.customerName === normalized.name) {
+        delete normalized.name;
+      }
+      if (normalized.customerPhone && normalized.phone && normalized.customerPhone === normalized.phone) {
+        delete normalized.phone;
+      }
     }
     
     return normalized;
@@ -384,40 +446,91 @@ class VoiceProcessor {
       const dateFormats = [
         'YYYY-MM-DD',     // 2025-09-27
         'MM-DD-YYYY',     // 09-27-2025
-        'MMM DD',         // Sep 27  
-        'MMMM DD',        // September 27
+        'MMM DD',         // Sep 27 (July 26)
+        'MMMM DD',        // September 27 (July 26)
+        'DD MMM',         // 27 Sep (26 July)
+        'DD MMMM',        // 27 September (26 July)
         'MMM DD YYYY',    // Sep 27 2025
         'MMMM DD YYYY',   // September 27 2025
+        'DD MMM YYYY',    // 27 Sep 2025 (26 July 2025)
+        'DD MMMM YYYY',   // 27 September 2025 (26 July 2025)
+        'MM/DD/YYYY',     // 07/26/2025
+        'MM/DD',          // 07/26
       ];
       
+      console.log(`🔍 Attempting to parse date: "${dateInput}"`);
       let parsedDate;
       
       // Try parsing with explicit formats first
       for (const format of dateFormats) {
-        parsedDate = moment(dateInput, format);
+        parsedDate = moment(dateInput, format, true); // strict parsing
+        console.log(`  - Trying format "${format}": ${parsedDate.isValid() ? parsedDate.format('YYYY-MM-DD') : 'invalid'}`);
+        
         if (parsedDate.isValid()) {
-          // If no year was provided (MMM DD format), assume current year
-          if (format === 'MMM DD' || format === 'MMMM DD') {
+          // If no year was provided, assume current year
+          const formatsWithoutYear = ['MMM DD', 'MMMM DD', 'DD MMM', 'DD MMMM', 'MM/DD'];
+          if (formatsWithoutYear.includes(format)) {
+            // Check if the parsed date is in the past, if so, assume next year
+            const today = moment();
             if (parsedDate.year() === 2001) { // moment defaults to 2001 for 2-digit years
               parsedDate.year(currentYear);
-              console.log(`📅 Adjusted date to current year: ${parsedDate.format('YYYY-MM-DD')}`);
+            }
+            
+            // If the date has already passed this year, move to next year
+            if (parsedDate.isBefore(today, 'day')) {
+              parsedDate.add(1, 'year');
+              console.log(`📅 Date was in past, moved to next year: ${parsedDate.format('YYYY-MM-DD')}`);
             }
           }
+          
+          console.log(`✅ Successfully parsed "${dateInput}" as ${parsedDate.format('YYYY-MM-DD')} using format "${format}"`);
           return parsedDate.format('YYYY-MM-DD');
         }
       }
       
-      // Fallback: try moment's auto-detection (this may still show warning)
-      parsedDate = moment(dateInput);
-      if (parsedDate.isValid()) {
-        // If the parsed date is in the past (wrong year), assume current year
-        if (parsedDate.year() < currentYear) {
-          // Try parsing with current year
-          parsedDate = moment(`${currentYear} ${dateInput}`);
-          console.log(`📅 Adjusted date to current year: ${parsedDate.format('YYYY-MM-DD')}`);
+      // Special handling for common natural language dates
+      const normalizedInput = input.replace(/(\d{1,2})(st|nd|rd|th)/, '$1'); // Remove ordinals
+      
+      // Try parsing month name + number combinations (both orders)
+      // Format: "July 26" or "26 July"
+      const monthNamePattern = /^(january|february|march|april|may|june|july|august|september|october|november|december)\s+\d{1,2}$/i;
+      const dayMonthPattern = /^\d{1,2}\s+(january|february|march|april|may|june|july|august|september|october|november|december)$/i;
+      
+      if (monthNamePattern.test(normalizedInput)) {
+        parsedDate = moment(normalizedInput, 'MMMM DD', true);
+        if (parsedDate.isValid()) {
+          parsedDate.year(currentYear);
+          
+          // If the date has already passed this year, move to next year
+          const today = moment();
+          if (parsedDate.isBefore(today, 'day')) {
+            parsedDate.add(1, 'year');
+            console.log(`📅 Date was in past, moved to next year: ${parsedDate.format('YYYY-MM-DD')}`);
+          }
+          
+          console.log(`✅ Successfully parsed "${dateInput}" as ${parsedDate.format('YYYY-MM-DD')} using month-day parsing`);
+          return parsedDate.format('YYYY-MM-DD');
         }
-        return parsedDate.format('YYYY-MM-DD');
+      } else if (dayMonthPattern.test(normalizedInput)) {
+        parsedDate = moment(normalizedInput, 'DD MMMM', true);
+        if (parsedDate.isValid()) {
+          parsedDate.year(currentYear);
+          
+          // If the date has already passed this year, move to next year
+          const today = moment();
+          if (parsedDate.isBefore(today, 'day')) {
+            parsedDate.add(1, 'year');
+            console.log(`📅 Date was in past, moved to next year: ${parsedDate.format('YYYY-MM-DD')}`);
+          }
+          
+          console.log(`✅ Successfully parsed "${dateInput}" as ${parsedDate.format('YYYY-MM-DD')} using day-month parsing`);
+          return parsedDate.format('YYYY-MM-DD');
+        }
       }
+      
+      console.log(`⚠️ Could not parse date with explicit formats, skipping auto-detection to avoid errors`);
+      console.log(`⚠️ Could not normalize date: ${dateInput}`);
+      return null; // Return null instead of the input to prevent errors
     }
     
     console.log(`⚠️ Could not normalize date: ${dateInput}`);

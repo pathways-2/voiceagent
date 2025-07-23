@@ -89,6 +89,31 @@ async function testConnections() {
     console.log('❌ Health Check Error:', error.message);
   }
 
+  // Test 4: Google Calendar Connection
+  console.log('\n4️⃣ Testing Google Calendar...');
+  try {
+    const GoogleCalendarService = require('./src/services/googleCalendarService');
+    const calendarService = new GoogleCalendarService();
+    
+    console.log('📋 Calendar Config:');
+    console.log('   Client ID:', process.env.GOOGLE_CALENDAR_CLIENT_ID ? 'Set' : 'Not set');
+    console.log('   Client Secret:', process.env.GOOGLE_CALENDAR_CLIENT_SECRET ? 'Set' : 'Not set');
+    console.log('   Refresh Token:', process.env.GOOGLE_CALENDAR_REFRESH_TOKEN ? 'Set' : 'Not set');
+    console.log('   Calendar ID:', process.env.GOOGLE_CALENDAR_ID || 'primary');
+    
+    const connectionTest = await calendarService.testConnection();
+    
+    if (connectionTest.success) {
+      console.log('✅ Google Calendar: Connected');
+      console.log('   Calendar:', connectionTest.calendarName);
+    } else {
+      console.log('⚠️ Google Calendar: Not configured');
+      console.log('   Message:', connectionTest.message);
+    }
+  } catch (error) {
+    console.log('❌ Google Calendar Error:', error.message);
+  }
+
   console.log('\n🎯 Connection Test Complete!');
 }
 

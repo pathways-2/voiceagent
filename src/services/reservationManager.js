@@ -2,11 +2,13 @@ const sqlite3 = require('sqlite3').verbose();
 const { v4: uuidv4 } = require('uuid');
 const moment = require('moment');
 const path = require('path');
+const GoogleCalendarService = require('./googleCalendarService');
 
 class ReservationManager {
   constructor() {
     this.dbPath = process.env.DATABASE_PATH || path.join(__dirname, '../../data/reservations.db');
     this.db = null;
+    this.googleCalendar = new GoogleCalendarService();
     this.initDatabase();
     
     // Restaurant configuration
@@ -60,6 +62,7 @@ class ReservationManager {
         special_requests TEXT,
         source TEXT DEFAULT 'voice_call',
         call_sid TEXT,
+        google_calendar_event_id TEXT,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
       )
@@ -351,8 +354,8 @@ class ReservationManager {
           INSERT INTO reservations (
             id, customer_name, customer_phone, customer_email,
             party_size, reservation_date, reservation_time, table_id,
-            special_requests, source, call_sid
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            special_requests, source, call_sid, google_calendar_event_id
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `;
 
         this.db.run(insertQuery, [
@@ -366,8 +369,9 @@ class ReservationManager {
           tableId,
           specialRequests || null,
           source || 'voice_call',
-          callSid || null
-        ], (err) => {
+          callSid || null,
+          null // Placeholder for google_calendar_event_id - will be updated after calendar event creation
+        ], async (err) => {
           if (err) {
             reject(err);
           } else {
@@ -383,6 +387,41 @@ class ReservationManager {
               customerPhone, customerName, customerEmail, customerPhone, date
             ]);
 
+            // Create Google Calendar event
+            const calendarData = {
+              reservationId,
+              customerName,
+              customerPhone,
+              customerEmail,
+              partySize,
+              date,
+              time,
+              specialRequests
+            };
+
+            const calendarResult = await this.googleCalendar.createReservationEvent(calendarData);
+            
+            let googleCalendarEventId = null;
+            if (calendarResult.success) {
+              googleCalendarEventId = calendarResult.eventId;
+              console.log('📅 Google Calendar event created:', googleCalendarEventId);
+              
+              // Update reservation with Google Calendar event ID
+              const updateCalendarQuery = `
+                UPDATE reservations 
+                SET google_calendar_event_id = ? 
+                WHERE id = ?
+              `;
+              
+              this.db.run(updateCalendarQuery, [googleCalendarEventId, reservationId], (updateErr) => {
+                if (updateErr) {
+                  console.error('❌ Failed to update reservation with calendar event ID:', updateErr);
+                }
+              });
+            } else {
+              console.log('⚠️ Google Calendar event creation failed:', calendarResult.reason || calendarResult.error);
+            }
+
             resolve({
               id: reservationId,
               customerName,
@@ -391,7 +430,9 @@ class ReservationManager {
               date,
               time,
               tableId: tableId,
-              status: 'confirmed'
+              status: 'confirmed',
+              googleCalendarEventId: googleCalendarEventId,
+              googleCalendarLink: calendarResult.eventLink
             });
           }
         });
@@ -467,6 +508,160 @@ class ReservationManager {
         resolve(rows);
       });
     });
+  }
+
+  async updateReservation(reservationId, updates) {
+    return new Promise(async (resolve, reject) => {
+      try {
+        // Get existing reservation
+        const existingReservation = await this.getReservation(reservationId);
+        if (!existingReservation) {
+          reject(new Error('Reservation not found'));
+          return;
+        }
+
+        // Update database
+        const updateFields = [];
+        const updateValues = [];
+        
+        Object.keys(updates).forEach(key => {
+          if (key !== 'id') {
+            updateFields.push(`${key} = ?`);
+            updateValues.push(updates[key]);
+          }
+        });
+        
+        updateValues.push(reservationId);
+        
+        const updateQuery = `
+          UPDATE reservations 
+          SET ${updateFields.join(', ')}, updated_at = CURRENT_TIMESTAMP 
+          WHERE id = ?
+        `;
+
+        this.db.run(updateQuery, updateValues, async (err) => {
+          if (err) {
+            reject(err);
+          } else {
+            // Update Google Calendar event if it exists
+            if (existingReservation.google_calendar_event_id) {
+              const calendarUpdates = {};
+              
+              if (updates.reservation_date || updates.reservation_time) {
+                const date = updates.reservation_date || existingReservation.reservation_date;
+                const time = updates.reservation_time || existingReservation.reservation_time;
+                const startDateTime = moment(`${date} ${time}`, 'YYYY-MM-DD HH:mm');
+                const endDateTime = startDateTime.clone().add(2, 'hours');
+                
+                calendarUpdates.start = {
+                  dateTime: startDateTime.toISOString(),
+                  timeZone: process.env.RESTAURANT_TIMEZONE || 'America/Los_Angeles',
+                };
+                calendarUpdates.end = {
+                  dateTime: endDateTime.toISOString(),
+                  timeZone: process.env.RESTAURANT_TIMEZONE || 'America/Los_Angeles',
+                };
+              }
+              
+              if (updates.customer_name || updates.party_size) {
+                const customerName = updates.customer_name || existingReservation.customer_name;
+                const partySize = updates.party_size || existingReservation.party_size;
+                calendarUpdates.summary = `Reservation: ${customerName} (Party of ${partySize})`;
+              }
+
+              const calendarResult = await this.googleCalendar.updateReservationEvent(
+                existingReservation.google_calendar_event_id, 
+                calendarUpdates
+              );
+              
+              if (!calendarResult.success) {
+                console.log('⚠️ Google Calendar event update failed:', calendarResult.error);
+              }
+            }
+
+            resolve({ success: true, id: reservationId });
+          }
+        });
+      } catch (error) {
+        reject(error);
+      }
+    });
+  }
+
+  async cancelReservation(reservationId, reason = 'Customer cancellation') {
+    return new Promise(async (resolve, reject) => {
+      try {
+        // Get existing reservation
+        const existingReservation = await this.getReservation(reservationId);
+        if (!existingReservation) {
+          reject(new Error('Reservation not found'));
+          return;
+        }
+
+        // Update database status
+        const updateQuery = `
+          UPDATE reservations 
+          SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP 
+          WHERE id = ?
+        `;
+
+        this.db.run(updateQuery, [reservationId], async (err) => {
+          if (err) {
+            reject(err);
+          } else {
+            // Delete Google Calendar event if it exists
+            if (existingReservation.google_calendar_event_id) {
+              const calendarResult = await this.googleCalendar.deleteReservationEvent(
+                existingReservation.google_calendar_event_id
+              );
+              
+              if (!calendarResult.success) {
+                console.log('⚠️ Google Calendar event deletion failed:', calendarResult.error);
+              } else {
+                console.log('📅 Google Calendar event deleted for cancelled reservation');
+              }
+            }
+
+            resolve({ 
+              success: true, 
+              id: reservationId, 
+              status: 'cancelled',
+              reason: reason 
+            });
+          }
+        });
+      } catch (error) {
+        reject(error);
+      }
+    });
+  }
+
+  async syncWithGoogleCalendar(startDate, endDate) {
+    try {
+      const calendarEvents = await this.googleCalendar.getReservationEvents(startDate, endDate);
+      
+      if (!calendarEvents.success) {
+        console.log('⚠️ Failed to sync with Google Calendar:', calendarEvents.error);
+        return { success: false, error: calendarEvents.error };
+      }
+
+      console.log(`📅 Found ${calendarEvents.events.length} calendar events to sync`);
+      
+      // This could be expanded to sync calendar events back to database
+      // For now, just return the events for reference
+      return {
+        success: true,
+        events: calendarEvents.events,
+        count: calendarEvents.events.length
+      };
+    } catch (error) {
+      console.error('❌ Calendar sync error:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  async testGoogleCalendarConnection() {
+    return await this.googleCalendar.testConnection();
   }
 
   close() {
