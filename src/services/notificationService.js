@@ -27,9 +27,9 @@ class NotificationService {
     
     this.restaurantInfo = {
       name: process.env.RESTAURANT_NAME || "Sylvie's Kitchen",
-      phone: process.env.RESTAURANT_PHONE || "+1234567890",
+      phone: process.env.RESTAURANT_PHONE || "+14256003548",
       email: process.env.FROM_EMAIL || "reservations@sylvieskitchen.com",
-      address: process.env.RESTAURANT_ADDRESS || "123 Main St, Your City, State 12345"
+      address: process.env.RESTAURANT_ADDRESS || "1247 Pine Street, Seattle, WA 98101"
     };
   }
 
