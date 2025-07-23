@@ -56,26 +56,32 @@ class NotificationService {
 
   async sendSMSConfirmation(reservation, customerPhone) {
     if (!this.twilioClient) {
-      console.log('⚠️ SMS skipped - Twilio not configured');
+      console.log('⚠️ Message skipped - Twilio not configured');
       return { success: false, reason: 'Twilio not configured' };
     }
 
     try {
-      const message = this.createSMSMessage(reservation);
-      console.log('📱 SMS Message Content:', message);
-      console.log('📱 Sending SMS to:', customerPhone);
+      const useWhatsApp = process.env.USE_WHATSAPP === 'true';
+      const message = useWhatsApp ? this.createWhatsAppMessage(reservation) : this.createSMSMessage(reservation);
+      const fromNumber = useWhatsApp ? process.env.TWILIO_WHATSAPP_NUMBER : process.env.TWILIO_PHONE_NUMBER;
+      const toNumber = useWhatsApp ? this.formatWhatsAppNumber(customerPhone) : customerPhone;
+      const messageType = useWhatsApp ? 'WhatsApp' : 'SMS';
+      
+      console.log(`📱 ${messageType} Message Content:`, message);
+      console.log(`📱 Sending ${messageType} to:`, toNumber);
       
       const result = await this.twilioClient.messages.create({
         body: message,
-        from: process.env.TWILIO_PHONE_NUMBER,
-        to: customerPhone
+        from: fromNumber,
+        to: toNumber
       });
       
-      console.log('✅ SMS sent:', result.sid);
-      return { success: true, sid: result.sid };
+      console.log(`✅ ${messageType} sent:`, result.sid);
+      return { success: true, sid: result.sid, type: messageType };
       
     } catch (error) {
-      console.error('❌ SMS failed:', error);
+      const messageType = process.env.USE_WHATSAPP === 'true' ? 'WhatsApp' : 'SMS';
+      console.error(`❌ ${messageType} failed:`, error);
       return { success: false, error: error.message };
     }
   }
@@ -118,6 +124,55 @@ class NotificationService {
     const readableDate = dateMoment.format('MMM D, YYYY');
     
     return `Reservation confirmed: ${reservation.customerName} for ${reservation.partySize} at ${time12} on ${readableDate} at ${this.restaurantInfo.name}.`;
+  }
+
+  createWhatsAppMessage(reservation) {
+    // Convert 24-hour time to 12-hour format for display
+    const time24 = reservation.time;
+    const timeMoment = require('moment')(time24, 'HH:mm');
+    const time12 = timeMoment.format('h:mm A');
+    
+    // Format date to readable format (e.g., "Saturday, Aug 10, 2025")
+    const dateMoment = require('moment')(reservation.date);
+    const readableDate = dateMoment.format('dddd, MMM D, YYYY');
+    
+    return `🍽️ *Reservation Confirmed!*
+
+👋 Hi ${reservation.customerName}!
+
+Your table is booked at *${this.restaurantInfo.name}*
+
+📅 *Date:* ${readableDate}
+🕰️ *Time:* ${time12}
+👥 *Party Size:* ${reservation.partySize} ${reservation.partySize === 1 ? 'person' : 'people'}
+📍 *Location:* ${this.restaurantInfo.address}
+
+We're excited to welcome you for an amazing dining experience! 
+
+📞 Questions? Call us: ${this.restaurantInfo.phone}
+
+See you soon! 🌟`;
+  }
+
+  formatWhatsAppNumber(phoneNumber) {
+    // Remove any existing whatsapp: prefix
+    let cleanNumber = phoneNumber.replace(/^whatsapp:/, '');
+    
+    // Remove all non-digit characters except +
+    cleanNumber = cleanNumber.replace(/[^\d+]/g, '');
+    
+    // Add country code if missing (assume US +1 if not provided)
+    if (!cleanNumber.startsWith('+')) {
+      if (cleanNumber.length === 10) {
+        cleanNumber = '+1' + cleanNumber;
+      } else if (cleanNumber.length === 11 && cleanNumber.startsWith('1')) {
+        cleanNumber = '+' + cleanNumber;
+      } else {
+        cleanNumber = '+1' + cleanNumber;
+      }
+    }
+    
+    return 'whatsapp:' + cleanNumber;
   }
 
   createEmailContent(reservation) {
@@ -207,31 +262,67 @@ The ${this.restaurantInfo.name} Team
 
   async sendReminder(reservation) {
     if (!this.twilioClient) {
-      console.log('⚠️ Reminder SMS skipped - Twilio not configured');
+      console.log('⚠️ Reminder message skipped - Twilio not configured');
       return { success: false, reason: 'Twilio not configured' };
     }
 
-    // Send 24-hour reminder
-    const reminderMessage = `🔔 Reminder: You have a reservation tomorrow at ${this.restaurantInfo.name}
+    try {
+      const useWhatsApp = process.env.USE_WHATSAPP === 'true';
+      const reminderMessage = useWhatsApp ? this.createWhatsAppReminder(reservation) : this.createSMSReminder(reservation);
+      const fromNumber = useWhatsApp ? process.env.TWILIO_WHATSAPP_NUMBER : process.env.TWILIO_PHONE_NUMBER;
+      const toNumber = useWhatsApp ? this.formatWhatsAppNumber(reservation.customerPhone) : reservation.customerPhone;
+      const messageType = useWhatsApp ? 'WhatsApp' : 'SMS';
+
+      console.log(`🔔 Sending ${messageType} reminder to:`, toNumber);
+
+      const result = await this.twilioClient.messages.create({
+        body: reminderMessage,
+        from: fromNumber,
+        to: toNumber
+      });
+      
+      console.log(`✅ ${messageType} reminder sent:`, result.sid);
+      return { success: true, sid: result.sid, type: messageType };
+    } catch (error) {
+      const messageType = process.env.USE_WHATSAPP === 'true' ? 'WhatsApp' : 'SMS';
+      console.error(`❌ ${messageType} reminder failed:`, error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  createSMSReminder(reservation) {
+    return `🔔 Reminder: You have a reservation tomorrow at ${this.restaurantInfo.name}
 
 📅 ${reservation.date} at ${reservation.time}
 👥 Party of ${reservation.partySize}
 
 Looking forward to seeing you!
 📞 ${this.restaurantInfo.phone}`;
+  }
 
-    try {
-      const result = await this.twilioClient.messages.create({
-        body: reminderMessage,
-        from: process.env.TWILIO_PHONE_NUMBER,
-        to: reservation.customerPhone
-      });
-      
-      return { success: true, sid: result.sid };
-    } catch (error) {
-      console.error('Error sending reminder:', error);
-      return { success: false, error: error.message };
-    }
+  createWhatsAppReminder(reservation) {
+    const time24 = reservation.time;
+    const timeMoment = require('moment')(time24, 'HH:mm');
+    const time12 = timeMoment.format('h:mm A');
+    
+    const dateMoment = require('moment')(reservation.date);
+    const readableDate = dateMoment.format('dddd, MMM D, YYYY');
+
+    return `🔔 *Reservation Reminder*
+
+Hi ${reservation.customerName}! 👋
+
+Don't forget about your reservation *tomorrow* at *${this.restaurantInfo.name}*
+
+📅 *Date:* ${readableDate}
+🕰️ *Time:* ${time12}
+👥 *Party Size:* ${reservation.partySize} ${reservation.partySize === 1 ? 'person' : 'people'}
+
+We're looking forward to welcoming you! 🍽️
+
+📞 Need to make changes? Call us: ${this.restaurantInfo.phone}
+
+See you tomorrow! ✨`;
   }
 }
 
