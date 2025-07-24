@@ -35,11 +35,8 @@ router.post('/incoming', async (req, res) => {
       language: 'en-US'
     }, greeting);
     
-    // Fallback if no input after 5 seconds
-    twiml.say({
-      voice: 'alice',
-      language: 'en-US'
-    }, 'I didn\'t hear anything. Please call back when you\'re ready to speak. Thank you!');
+    // Redirect to retry handler if no input
+    twiml.redirect('/voice/retry?attempt=1&context=greeting');
     
     res.type('text/xml');
     res.send(twiml.toString());
@@ -50,7 +47,7 @@ router.post('/incoming', async (req, res) => {
     twiml.say({
       voice: 'alice',
       language: 'en-US'
-    }, 'I\'m sorry, I\'m having technical difficulties. Please try calling back in a few moments.');
+    }, 'I am sorry, I am having technical difficulties. Please try calling back in a few moments.');
     
     res.type('text/xml');
     res.send(twiml.toString());
@@ -81,7 +78,7 @@ router.post('/process-speech', async (req, res) => {
       gather.say({
         voice: 'alice',
         language: 'en-US'
-      }, 'I didn\'t catch that. Could you please repeat what you need help with?');
+      }, 'I did not catch that. Could you please repeat what you need help with?');
       
       twiml.say('Thank you for calling. Goodbye!');
       
@@ -101,7 +98,30 @@ router.post('/process-speech', async (req, res) => {
       });
       
       // Ensure we have a valid response message
-      const finalMessage = response.message || "I'm sorry, I didn't quite understand. Could you please repeat that?";
+      let finalMessage = response.message || "I am sorry, I did not quite understand. Could you please repeat that?";
+      
+      // Sanitize message for TwiML - remove problematic characters
+      finalMessage = finalMessage
+        .replace(/[<>&"'`]/g, '') // Remove XML-problematic characters including apostrophes
+        .replace(/'/g, '')        // Remove smart quotes
+        .replace(/"/g, '')        // Remove smart quotes  
+        .replace(/–/g, "-")       // Replace en-dash with regular dash
+        .replace(/—/g, "-")       // Replace em-dash with regular dash
+        .replace(/\\/g, '')       // Remove backslashes
+        .replace(/[\u2019\u2018]/g, '') // Remove smart apostrophes (Unicode)
+        .replace(/[\u201C\u201D]/g, '') // Remove smart quotes (Unicode)
+        .replace(/[\u2013\u2014]/g, '-') // Replace em/en dashes (Unicode)
+        .replace(/&/g, 'and')     // Replace ampersand with 'and'
+        .trim();                  // Remove leading/trailing whitespace
+      
+      console.log('🧹 Sanitized message for TwiML:', {
+        original: response.message ? response.message.substring(0, 100) + '...' : 'NO MESSAGE',
+        sanitized: finalMessage.substring(0, 100) + '...',
+        originalLength: response.message ? response.message.length : 0,
+        sanitizedLength: finalMessage.length
+      });
+      
+      console.log('📢 FULL MESSAGE BEING SENT TO TWILIO:', finalMessage);
       
       // Handle different conversation states
       if (response.needsMoreInput) {
@@ -118,13 +138,13 @@ router.post('/process-speech', async (req, res) => {
         gather.say({
           voice: 'alice',
           language: 'en-US'
-        }, finalMessage + (response.followUpQuestion ? ' ' + response.followUpQuestion : ''));
+        }, finalMessage);
         
         // Fallback if no response to follow-up
         twiml.say({
           voice: 'alice',
           language: 'en-US'
-        }, 'I didn\'t hear your response. Please call back when you\'re ready. Thank you!');
+        }, 'I did not hear your response. Please call back when you are ready. Thank you!');
         
       } else if (response.transferToHuman) {
         twiml.say({
@@ -142,13 +162,8 @@ router.post('/process-speech', async (req, res) => {
           language: 'en-US'
         }, finalMessage);
         
-        // End with goodbye if it's truly complete
-        if (response.conversationComplete) {
-          twiml.say({
-            voice: 'alice',
-            language: 'en-US'
-          }, 'Thank you for calling Sylvie\'s Kitchen. Have a wonderful day!');
-        } else {
+        // Continue conversation if not complete
+        if (!response.conversationComplete) {
           // Continue conversation with basic gather
           const gather = twiml.gather({
             input: 'speech',
@@ -166,7 +181,7 @@ router.post('/process-speech', async (req, res) => {
           twiml.say({
             voice: 'alice',
             language: 'en-US'
-          }, 'Thank you for calling Sylvie\'s Kitchen. Have a wonderful day!');
+          }, 'Thank you for calling Sylvies Kitchen. Have a wonderful day!');
         }
       }
     }
@@ -180,7 +195,7 @@ router.post('/process-speech', async (req, res) => {
     twiml.say({
       voice: 'alice',
       language: 'en-US'
-    }, 'I\'m sorry, I\'m having trouble understanding. Let me transfer you to someone who can help.');
+    }, 'I am sorry, I am having trouble understanding. Let me transfer you to someone who can help.');
     
     // Transfer to human on error
     twiml.dial(process.env.RESTAURANT_PHONE || '+1234567890');
@@ -230,6 +245,70 @@ router.get('/test-rag/:query?', async (req, res) => {
 router.get('/stats', (req, res) => {
   const stats = voiceProcessor.getStats();
   res.json(stats);
+});
+
+// Handle retry when user doesn't respond
+router.post('/retry', async (req, res) => {
+  try {
+    const twiml = new twilio.twiml.VoiceResponse();
+    const attempt = parseInt(req.query.attempt) || 1;
+    const context = req.query.context || 'greeting';
+    const maxAttempts = 2; // Give user 2 chances total
+    
+    console.log(`🔄 Retry attempt ${attempt} for context: ${context}`);
+    
+    if (attempt >= maxAttempts) {
+      // Final attempt - polite goodbye
+      twiml.say({
+        voice: 'alice',
+        language: 'en-US'
+      }, 'I am having trouble hearing you today. Please feel free to call back anytime. Thank you for calling Sylvies Kitchen!');
+      twiml.hangup();
+    } else {
+      // Give user another chance with encouraging message
+      const gather = twiml.gather({
+        input: 'speech',
+        action: '/voice/process-speech',
+        method: 'POST',
+        speechTimeout: 8, // Slightly longer timeout for retry
+        language: 'en-US',
+        hints: 'reservation, table, booking, menu, hours, wine, dinner, lunch, help'
+      });
+      
+      // Context-specific retry messages
+      let retryMessage;
+      if (context === 'greeting') {
+        retryMessage = 'I am sorry, I did not catch that. How may I help you today? You can ask about reservations, our menu, or hours.';
+      } else {
+        retryMessage = 'I am sorry, I did not hear your response. Could you please repeat that for me?';
+      }
+      
+      gather.say({
+        voice: 'alice',
+        language: 'en-US'
+      }, retryMessage);
+      
+      // Add pause to prevent feedback
+      gather.pause({ length: 1 });
+      
+      // If still no response, try one more time or give up
+      twiml.redirect(`/voice/retry?attempt=${attempt + 1}&context=${context}`);
+    }
+    
+    res.type('text/xml');
+    res.send(twiml.toString());
+    
+  } catch (error) {
+    console.error('❌ Error in retry handler:', error);
+    const twiml = new twilio.twiml.VoiceResponse();
+    twiml.say({
+      voice: 'alice',
+      language: 'en-US'
+    }, 'I am experiencing technical difficulties. Please call back later. Thank you!');
+    twiml.hangup();
+    res.type('text/xml');
+    res.send(twiml.toString());
+  }
 });
 
 module.exports = router; 

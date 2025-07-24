@@ -47,7 +47,7 @@ CRITICAL RULES:
 - Be warm and professional, but follow the process exactly
 
 SAMPLE RESPONSES:
-- "I'd be happy to help you with a reservation! What date, time, and party size were you thinking?"
+- "I would be happy to help you with a reservation! What date, time, and party size were you thinking?"
 - "Let me check our availability for [party size] people on [date] at [time]..."
 - "Great! I have that time available. May I get your name and phone number to complete the reservation?"
 
@@ -58,7 +58,7 @@ CRITICAL: NEVER say specific times are "busy" or "available" without the system 
     const greetings = [
       "Thank you for calling Sylvie's Kitchen! This is Rooney, your friendly assistant. How may I help you today?",
       "Hello and welcome to Sylvie's Kitchen! I'm Rooney, how may I help you today?",
-      "Good day! You've reached Sylvie's Kitchen. I'm Rooney, your virtual assistant. How can I assist you today?"
+      "Hello! You've reached Sylvie's Kitchen. I'm Rooney, your virtual assistant. How can I assist you today?"
     ];
     
     return greetings[Math.floor(Math.random() * greetings.length)];
@@ -321,7 +321,7 @@ Determine:
 
 IMPORTANT RULES:
 - For FAQ questions: ALWAYS set "needsMoreInput": true and provide a helpful followUpQuestion
-- For reservation intent: Follow the reservation flow rules
+- For reservation intent: Follow the reservation flow rules. 
 - For GOODBYE intent: Set "conversationComplete": true when customer clearly wants to end the call
 
 GOODBYE/TERMINATION DETECTION:

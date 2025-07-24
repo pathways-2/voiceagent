@@ -242,7 +242,7 @@ class ReservationManager {
       if (openDays.length > 0) {
         message += `Our hours are: ${openDays.slice(0, 2).join(', ')}`;
         if (openDays.length > 2) {
-          message += `, and similar hours other days`;
+          message += `, and similar hours other days. Would you like to make a reservation for another day?`;
         }
         message += '.';
       }

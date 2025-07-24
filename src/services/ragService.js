@@ -159,9 +159,10 @@ ${context}
 CUSTOMER QUESTION: ${query}
 
 CRITICAL INSTRUCTIONS:
-- Answer in EXACTLY 25 words or less
-- Be direct and concise for voice interface
-- End with "For complete details, visit our website or ask our staff."
+- Answer in 30-40 words (be concise but complete for voice interface)
+- Be direct and helpful
+- ALWAYS end with a natural follow-up question to keep the conversation going
+- Pick one of the following follow-up questions: "Is there anything else you would like to know?", "Can I help you with anything else?", "What other questions can I answer for you?"
 - Do not list multiple items or long descriptions
 
 RESPONSE:`;
@@ -170,7 +171,7 @@ RESPONSE:`;
         model: 'gpt-4',
         messages: [{ role: 'user', content: prompt }],
         temperature: 0.7,
-        max_tokens: 50
+        max_tokens: 80
       });
 
       return {
@@ -210,7 +211,7 @@ RESPONSE:`;
     } else if (queryLower.includes('location') || queryLower.includes('address') || queryLower.includes('where')) {
       return "We're located in Seattle. I don't have the exact address details available right now. Is there anything else I can help you with, or would you like to make a reservation?";
     } else if (queryLower.includes('reservation') || queryLower.includes('book') || queryLower.includes('table')) {
-      return "I'd be happy to help you with a reservation! What date, time, and party size were you thinking?";
+      return "I would be happy to help you with a reservation! What date, time, and party size were you thinking?";
     }
     
     return "I don't have that information currently. Is there anything else I can help you with, or would you like to make a reservation?";
