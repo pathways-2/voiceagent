@@ -3,6 +3,7 @@ const { v4: uuidv4 } = require('uuid');
 const moment = require('moment');
 const path = require('path');
 const GoogleCalendarService = require('./googleCalendarService');
+const { globalTimer } = require('../utils/timer');
 
 class ReservationManager {
   constructor() {
@@ -186,7 +187,9 @@ class ReservationManager {
         AND status != 'cancelled'
       `;
 
+      globalTimer.start('Database-Availability-Check');
       this.db.get(query, [date, time], (err, row) => {
+        globalTimer.end('Database-Availability-Check');
         if (err) {
           reject(err);
           return;

@@ -3,6 +3,8 @@ const twilio = require('twilio');
 const VoiceResponse = twilio.twiml.VoiceResponse;
 const ConversationManager = require('../services/conversationManager');
 const VoiceProcessor = require('../services/voiceProcessor');
+const { globalTimer } = require('../utils/timer');
+const { restaurantHoursCache } = require('../utils/restaurantHoursCache');
 
 const router = express.Router();
 
@@ -61,6 +63,9 @@ router.post('/process-speech', async (req, res) => {
   console.log('🎤 Speech received:', SpeechResult);
   console.log('📱 From:', From);
   console.log('🆔 Call ID:', CallSid);
+  
+  const routeTimer = `Twilio-Route-${CallSid}`;
+  globalTimer.start(routeTimer);
   
   const twiml = new VoiceResponse();
   
@@ -186,6 +191,7 @@ router.post('/process-speech', async (req, res) => {
       }
     }
     
+    globalTimer.end(routeTimer);
     res.type('text/xml');
     res.send(twiml.toString());
     
@@ -200,6 +206,7 @@ router.post('/process-speech', async (req, res) => {
     // Transfer to human on error
     twiml.dial(process.env.RESTAURANT_PHONE || '+1234567890');
     
+    globalTimer.end(routeTimer);
     res.type('text/xml');
     res.send(twiml.toString());
   }
@@ -308,6 +315,25 @@ router.post('/retry', async (req, res) => {
     twiml.hangup();
     res.type('text/xml');
     res.send(twiml.toString());
+  }
+});
+
+// Cache management endpoints for debugging/admin
+router.post('/cache/invalidate', async (req, res) => {
+  try {
+    const result = await restaurantHoursCache.invalidateCache();
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+router.get('/cache/status', async (req, res) => {
+  try {
+    const status = await restaurantHoursCache.getCacheStatus();
+    res.json(status);
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 

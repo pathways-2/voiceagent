@@ -1,5 +1,7 @@
 const OpenAI = require('openai');
 const RAGService = require('./ragService');
+const { globalTimer } = require('../utils/timer');
+const { restaurantHoursCache } = require('../utils/restaurantHoursCache');
 
 class ConversationManager {
   constructor() {
@@ -68,8 +70,8 @@ CRITICAL: NEVER say specific times are "busy" or "available" without the system 
     if (!this.activeConversations.has(callSid)) {
       console.log(`🆕 Creating new conversation session for ${callSid}`);
       
-      // Load restaurant hours from RAG for this session
-      const restaurantHours = await this.loadRestaurantHoursFromRAG();
+      // Load restaurant hours from cache (with RAG fallback) for this session
+      const restaurantHours = await this.loadRestaurantHours();
       
       this.activeConversations.set(callSid, {
         messages: [],
@@ -80,37 +82,46 @@ CRITICAL: NEVER say specific times are "busy" or "available" without the system 
         intent: null
       });
       
-      console.log(`📅 Loaded restaurant hours for session ${callSid} from RAG`);
+      console.log(`📅 Loaded restaurant hours for session ${callSid}`);
     }
     return this.activeConversations.get(callSid);
   }
 
-  async loadRestaurantHoursFromRAG() {
+  async loadRestaurantHours() {
     try {
-      console.log('📖 Loading restaurant hours from RAG database...');
+      // Use cache-first approach with RAG fallback
+      const hours = await restaurantHoursCache.getHours(async () => {
+        return await this.fetchRestaurantHoursFromRAG();
+      });
       
-      // Query RAG for restaurant hours information
-      const hoursQuery = 'restaurant hours operating schedule days open closed';
-      const searchResults = await this.ragService.searchFAQ(hoursQuery);
-      
-      if (searchResults.success && searchResults.results.length > 0) {
-        // Parse the hours from RAG results
-        const parsedHours = this.parseHoursFromRAGResults(searchResults.results);
-        
-        console.log('✅ Restaurant hours loaded from RAG:', {
-          source: 'RAG Database',
-          mondayClosed: parsedHours.monday.status === 'closed',
-          daysFound: Object.keys(parsedHours).length
-        });
-        
-        return parsedHours;
-      } else {
-        console.log('⚠️ No hours found in RAG, using fallback');
-        return this.getFallbackHours();
-      }
+      return hours;
       
     } catch (error) {
-      console.error('❌ Failed to load hours from RAG:', error.message);
+      console.error('❌ Failed to load restaurant hours:', error.message);
+      return this.getFallbackHours();
+    }
+  }
+
+  async fetchRestaurantHoursFromRAG() {
+    console.log('📖 Fetching restaurant hours from RAG database...');
+    
+    // Query RAG for restaurant hours information
+    const hoursQuery = 'restaurant hours operating schedule days open closed';
+    const searchResults = await this.ragService.searchFAQ(hoursQuery);
+    
+    if (searchResults.success && searchResults.results.length > 0) {
+      // Parse the hours from RAG results
+      const parsedHours = this.parseHoursFromRAGResults(searchResults.results);
+      
+      console.log('✅ Restaurant hours fetched from RAG:', {
+        source: 'RAG Database',
+        mondayClosed: parsedHours.monday.status === 'closed',
+        daysFound: Object.keys(parsedHours).length
+      });
+      
+      return parsedHours;
+    } else {
+      console.log('⚠️ No hours found in RAG, using fallback');
       return this.getFallbackHours();
     }
   }
@@ -238,14 +249,16 @@ CRITICAL: NEVER say specific times are "busy" or "available" without the system 
 
     try {
       // Call OpenAI for response
-      const completion = await this.openai.chat.completions.create({
-        model: 'gpt-4',
-        messages: [
-          { role: 'system', content: this.systemPrompt },
-          ...conversation.messages
-        ],
-        temperature: 0.7,
-        max_tokens: 200
+      const completion = await globalTimer.timeAsync('OpenAI-Chat-Completion', async () => {
+        return await this.openai.chat.completions.create({
+          model: 'gpt-4',
+          messages: [
+            { role: 'system', content: this.systemPrompt },
+            ...conversation.messages
+          ],
+          temperature: 0.7,
+          max_tokens: 200
+        });
       });
 
       const assistantResponse = completion.choices[0].message.content;
@@ -268,7 +281,9 @@ CRITICAL: NEVER say specific times are "busy" or "available" without the system 
       // If this is an FAQ query, enhance with RAG
       else if (analysis.intent === 'faq') {
         console.log('🔍 FAQ intent detected, calling RAG...');
-        const ragResponse = await this.handleFAQWithRAG(userInput, conversation);
+        const ragResponse = await globalTimer.timeAsync('RAG-FAQ-Processing', async () => {
+          return await this.handleFAQWithRAG(userInput, conversation);
+        });
         console.log('📝 RAG response result:', {
           success: ragResponse.success, 
           hasResponse: !!ragResponse.response,
@@ -352,11 +367,13 @@ Respond in JSON format:
 }`;
 
     try {
-      const completion = await this.openai.chat.completions.create({
-        model: 'gpt-4',
-        messages: [{ role: 'user', content: analysisPrompt }],
-        temperature: 0.3,
-        max_tokens: 300
+      const completion = await globalTimer.timeAsync('OpenAI-Intent-Analysis', async () => {
+        return await this.openai.chat.completions.create({
+          model: 'gpt-4',
+          messages: [{ role: 'user', content: analysisPrompt }],
+          temperature: 0.3,
+          max_tokens: 300
+        });
       });
 
       const analysis = JSON.parse(completion.choices[0].message.content);

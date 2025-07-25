@@ -1,0 +1,42 @@
+{
+  "hours": {
+    "monday": {
+      "status": "closed"
+    },
+    "tuesday": {
+      "open": "17:00",
+      "close": "22:00",
+      "display": "5:00 PM - 10:00 PM"
+    },
+    "wednesday": {
+      "open": "17:00",
+      "close": "22:00",
+      "display": "5:00 PM - 10:00 PM"
+    },
+    "thursday": {
+      "open": "17:00",
+      "close": "22:00",
+      "display": "5:00 PM - 10:00 PM"
+    },
+    "friday": {
+      "open": "17:00",
+      "close": "23:00",
+      "display": "5:00 PM - 11:00 PM"
+    },
+    "saturday": {
+      "open": "17:00",
+      "close": "23:00",
+      "display": "5:00 PM - 11:00 PM"
+    },
+    "sunday": {
+      "open": "16:30",
+      "close": "21:30",
+      "display": "4:30 PM - 9:30 PM"
+    },
+    "source": "RAG Database",
+    "lastUpdated": "2025-07-25T06:36:43.272Z"
+  },
+  "lastUpdated": "2025-07-25T06:36:43.274Z",
+  "expiresAt": "2025-07-26T06:36:43.274Z",
+  "ttlHours": 24
+}

@@ -1,5 +1,6 @@
 const ConversationManager = require('./conversationManager');
 const ReservationManager = require('./reservationManager');
+const { globalTimer } = require('../utils/timer');
 const NotificationService = require('./notificationService');
 
 class VoiceProcessor {
@@ -11,14 +12,19 @@ class VoiceProcessor {
 
   async processUserInput(speechText, customerPhone, callSid) {
     console.log('🎯 Processing user input:', { speechText, customerPhone, callSid });
+    
+    const overallTimer = `Voice-Processing-${callSid}`;
+    globalTimer.start(overallTimer);
 
     try {
       // Process with conversation manager
-      const response = await this.conversationManager.processMessage(
-        speechText, 
-        callSid, 
-        customerPhone
-      );
+      const response = await globalTimer.timeAsync('Conversation-Processing', async () => {
+        return await this.conversationManager.processMessage(
+          speechText, 
+          callSid, 
+          customerPhone
+        );
+      });
 
       // Handle reservation creation with proper flow
       if (response.intent === 'reservation') {
@@ -53,11 +59,13 @@ class VoiceProcessor {
             return response;
           }
           
-          const availabilityResult = await this.checkReservationAvailability(
-            normalizedData, 
-            customerPhone, 
-            callSid
-          );
+                    const availabilityResult = await globalTimer.timeAsync('Availability-Check', async () => {
+            return await this.checkReservationAvailability(
+              normalizedData, 
+              customerPhone,
+              callSid
+            );
+          });
           
           console.log('📅 Availability check result:', availabilityResult);
           
@@ -151,10 +159,12 @@ class VoiceProcessor {
         }
       }
 
+      globalTimer.end(overallTimer);
       return response;
 
     } catch (error) {
       console.error('Error processing voice input:', error);
+      globalTimer.end(overallTimer);
       
       return {
         message: "I apologize, but I'm experiencing some technical difficulties. Let me connect you with one of our team members who can assist you.",
@@ -365,16 +375,18 @@ class VoiceProcessor {
       console.log('✅ Availability already confirmed - proceeding directly to booking');
 
       // Create the reservation directly (availability was already confirmed)
-      const reservation = await this.reservationManager.createReservation({
-        customerName: reservationData.customerName,
-        customerPhone: reservationData.customerPhone,
-        customerEmail: reservationData.customerEmail || null,
-        partySize: parseInt(reservationData.partySize),
-        date: reservationData.date,
-        time: reservationData.time,
-        specialRequests: reservationData.specialRequests || null,
-        source: 'voice_call',
-        callSid: callSid
+      const reservation = await globalTimer.timeAsync('Create-Reservation', async () => {
+        return await this.reservationManager.createReservation({
+          customerName: reservationData.customerName,
+          customerPhone: reservationData.customerPhone,
+          customerEmail: reservationData.customerEmail || null,
+          partySize: parseInt(reservationData.partySize),
+          date: reservationData.date,
+          time: reservationData.time,
+          specialRequests: reservationData.specialRequests || null,
+          source: 'voice_call',
+          callSid: callSid
+        });
       });
 
       if (reservation && reservation.id) {

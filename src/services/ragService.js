@@ -1,5 +1,6 @@
 const { Configuration, PipelinesApi } = require('@vectorize-io/vectorize-client');
 const OpenAI = require('openai');
+const { globalTimer } = require('../utils/timer');
 
 class RAGService {
   constructor() {
@@ -27,7 +28,9 @@ class RAGService {
       console.log('🔍 RAG search for:', query);
 
       // Search using pipeline (handles embedding internally)
-      const searchResults = await this.vectorSearch(query, topK);
+      const searchResults = await globalTimer.timeAsync('Vector-Search', async () => {
+        return await this.vectorSearch(query, topK);
+      });
 
       // Debug: Log all results with scores
       console.log('🔍 All search results:');
@@ -167,11 +170,13 @@ CRITICAL INSTRUCTIONS:
 
 RESPONSE:`;
 
-      const completion = await this.openai.chat.completions.create({
-        model: 'gpt-4',
-        messages: [{ role: 'user', content: prompt }],
-        temperature: 0.7,
-        max_tokens: 80
+      const completion = await globalTimer.timeAsync('OpenAI-RAG-Response-Generation', async () => {
+        return await this.openai.chat.completions.create({
+          model: 'gpt-4',
+          messages: [{ role: 'user', content: prompt }],
+          temperature: 0.7,
+          max_tokens: 80
+        });
       });
 
       return {
