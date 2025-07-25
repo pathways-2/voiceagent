@@ -5,12 +5,120 @@ const { globalTimer } = require('./timer');
 class RAGQueryCache {
   constructor() {
     this.cacheFile = path.join(__dirname, '../../data/rag-query-cache.json');
-    this.ttlHours = 24; // Cache expires after 24 hours
+    this.ttlHours = 168; // Cache expires after 168 hours (7 days)
     this.maxQueries = 10; // Maximum number of cached queries (LRU eviction)
+    this.fuzzyThreshold = 0.8; // Minimum similarity score for fuzzy matches (0-1)
   }
 
   /**
-   * Get cached vector search results for a query
+   * Normalize query for better fuzzy matching by removing common words and punctuation
+   * @param {string} query - Query to normalize
+   * @returns {string} Normalized query
+   */
+  normalizeForFuzzy(query) {
+    return query
+      .toLowerCase()
+      .replace(/\b(what|is|the|do|you|have|tell|me|about|can|we|get|any|some)\b/g, '') // Remove question words
+      .replace(/\b(availability|available|items?|options?|choice|choices)\b/g, '') // Remove availability/options words
+      .replace(/[?!.,;:'"()]/g, '') // Remove punctuation
+      .replace(/\s+/g, ' ')         // Normalize spaces
+      .trim();                      // Remove leading/trailing spaces
+  }
+
+  /**
+   * Calculate Levenshtein distance between two strings
+   * @param {string} str1 - First string
+   * @param {string} str2 - Second string
+   * @returns {number} Edit distance
+   */
+  levenshteinDistance(str1, str2) {
+    const matrix = [];
+    const len1 = str1.length;
+    const len2 = str2.length;
+
+    // Initialize matrix
+    for (let i = 0; i <= len1; i++) {
+      matrix[i] = [i];
+    }
+    for (let j = 0; j <= len2; j++) {
+      matrix[0][j] = j;
+    }
+
+    // Fill matrix
+    for (let i = 1; i <= len1; i++) {
+      for (let j = 1; j <= len2; j++) {
+        if (str1[i - 1] === str2[j - 1]) {
+          matrix[i][j] = matrix[i - 1][j - 1];
+        } else {
+          matrix[i][j] = Math.min(
+            matrix[i - 1][j] + 1,     // deletion
+            matrix[i][j - 1] + 1,     // insertion
+            matrix[i - 1][j - 1] + 1  // substitution
+          );
+        }
+      }
+    }
+
+    return matrix[len1][len2];
+  }
+
+  /**
+   * Calculate similarity score between two strings (0-1, higher is more similar)
+   * @param {string} str1 - First string
+   * @param {string} str2 - Second string
+   * @returns {number} Similarity score between 0 and 1
+   */
+  calculateSimilarity(str1, str2) {
+    // Normalize both strings for better fuzzy matching
+    const normalizedStr1 = this.normalizeForFuzzy(str1);
+    const normalizedStr2 = this.normalizeForFuzzy(str2);
+    
+    const maxLen = Math.max(normalizedStr1.length, normalizedStr2.length);
+    if (maxLen === 0) return 1; // Both strings are empty
+    
+    const distance = this.levenshteinDistance(normalizedStr1, normalizedStr2);
+    return 1 - (distance / maxLen);
+  }
+
+  /**
+   * Find the best fuzzy match for a query in the cache
+   * @param {string} query - Query to match
+   * @param {Object} cache - Cache object with queries
+   * @returns {Object|null} {key, similarity} or null if no good match
+   */
+  findFuzzyMatch(query, cache) {
+    let bestMatch = null;
+    let bestSimilarity = 0;
+
+    for (const cachedQuery of Object.keys(cache.queries || {})) {
+      const similarity = this.calculateSimilarity(query, cachedQuery);
+      
+      if (similarity >= this.fuzzyThreshold && similarity > bestSimilarity) {
+        bestSimilarity = similarity;
+        bestMatch = {
+          key: cachedQuery,
+          similarity: similarity
+        };
+      }
+    }
+
+    return bestMatch;
+  }
+
+  /**
+   * Check if a cached entry has expired
+   * @param {Object} queryData - The cached query data object
+   * @returns {boolean} True if expired, false if still valid
+   */
+  isExpired(queryData) {
+    if (!queryData || !queryData.expiresAt) {
+      return true; // No expiration data means expired
+    }
+    return new Date() > new Date(queryData.expiresAt);
+  }
+
+  /**
+   * Get cached vector search results for a query (with fuzzy matching)
    * @param {string} cleanedQuery - The preprocessed query string
    * @returns {Object|null} Cached vector results or null if not found/expired
    */
@@ -20,37 +128,46 @@ class RAGQueryCache {
       globalTimer.start(timerLabel);
 
       const cache = await this.loadCache();
-      const queryData = cache.queries[cleanedQuery];
-
-      if (!queryData) {
-        console.log(`🔍 RAG Cache Miss: "${cleanedQuery}"`);
-        globalTimer.end(timerLabel);
-        return null;
-      }
-
-      // Check if expired
-      const now = new Date();
-      const expiresAt = new Date(queryData.expiresAt);
       
-      if (now > expiresAt) {
-        console.log(`⏰ RAG Cache Expired: "${cleanedQuery}"`);
-        await this.removeQuery(cleanedQuery);
+      // Try exact match first
+      const queryData = cache.queries?.[cleanedQuery];
+      
+      if (queryData && !this.isExpired(queryData)) {
+        // Update access time for LRU
+        queryData.lastAccessed = Date.now();
+        queryData.hitCount = (queryData.hitCount || 0) + 1;
+        await this.saveCache(cache);
+        
         globalTimer.end(timerLabel);
-        return null;
+        console.log(`🎯 RAG Cache Hit (exact): "${cleanedQuery}"`);
+        return queryData.vectorResults;
       }
 
-      // Update access time for LRU
-      queryData.lastAccessed = now.toISOString();
-      queryData.hitCount = (queryData.hitCount || 0) + 1;
-      await this.saveCache(cache);
+      // Try fuzzy matching if exact match failed
+      console.log(`🔍 RAG Cache Miss (exact): "${cleanedQuery}" - trying fuzzy match...`);
+      const fuzzyMatch = this.findFuzzyMatch(cleanedQuery, cache);
+      
+      if (fuzzyMatch) {
+        const fuzzyQueryData = cache.queries[fuzzyMatch.key];
+        
+        if (fuzzyQueryData && !this.isExpired(fuzzyQueryData)) {
+          // Update access time for LRU
+          fuzzyQueryData.lastAccessed = Date.now();
+          fuzzyQueryData.hitCount = (fuzzyQueryData.hitCount || 0) + 1;
+          await this.saveCache(cache);
+          
+          globalTimer.end(timerLabel);
+          console.log(`🎯 RAG Cache Hit (fuzzy): "${cleanedQuery}" → "${fuzzyMatch.key}" (similarity: ${fuzzyMatch.similarity.toFixed(3)})`);
+          return fuzzyQueryData.vectorResults;
+        }
+      }
 
-      console.log(`🎯 RAG Cache Hit: "${cleanedQuery}" (hits: ${queryData.hitCount})`);
       globalTimer.end(timerLabel);
-      
-      return queryData.vectorResults;
+      console.log(`❌ RAG Cache Miss: "${cleanedQuery}"`);
+      return null;
 
     } catch (error) {
-      console.error('❌ Error reading RAG cache:', error.message);
+      console.error('❌ RAG cache lookup error:', error.message);
       return null;
     }
   }

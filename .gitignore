@@ -117,3 +117,5 @@ dist
 # Temporary folders
 tmp/
 temp/ 
+# Cache files
+data/*-cache.json
