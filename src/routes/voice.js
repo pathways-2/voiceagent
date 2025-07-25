@@ -5,6 +5,7 @@ const ConversationManager = require('../services/conversationManager');
 const VoiceProcessor = require('../services/voiceProcessor');
 const { globalTimer } = require('../utils/timer');
 const { restaurantHoursCache } = require('../utils/restaurantHoursCache');
+const { ragQueryCache } = require('../utils/ragQueryCache');
 
 const router = express.Router();
 
@@ -331,6 +332,25 @@ router.post('/cache/invalidate', async (req, res) => {
 router.get('/cache/status', async (req, res) => {
   try {
     const status = await restaurantHoursCache.getCacheStatus();
+    res.json(status);
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// RAG Query Cache management endpoints
+router.post('/rag-cache/invalidate', async (req, res) => {
+  try {
+    const result = await ragQueryCache.invalidateCache();
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+router.get('/rag-cache/status', async (req, res) => {
+  try {
+    const status = await ragQueryCache.getCacheStatus();
     res.json(status);
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });

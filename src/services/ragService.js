@@ -3,6 +3,7 @@ const OpenAI = require('openai');
 const path = require('path');
 const fs = require('fs').promises;
 const { globalTimer } = require('../utils/timer');
+const { ragQueryCache } = require('../utils/ragQueryCache');
 
 // Model configuration for RAG tasks
 const MODEL_CONFIG = {
@@ -28,16 +29,30 @@ class RAGService {
   }
 
   /**
-   * Search the vector database for relevant FAQ information
+   * Search FAQ using RAG (with caching for vector search results)
    */
   async searchFAQ(query, topK = 5, threshold = 0.1) { // Lowered threshold to allow more relevant results
     try {
       console.log('🔍 RAG search for:', query);
 
-      // Search using pipeline (handles embedding internally)
-      const searchResults = await globalTimer.timeAsync('Vector-Search', async () => {
-        return await this.vectorSearch(query, topK);
-      });
+      // Check cache first
+      const cachedResults = await ragQueryCache.getCachedResults(query);
+      let searchResults;
+
+      if (cachedResults) {
+        // Cache hit - use cached vector search results
+        searchResults = cachedResults;
+        console.log('🎯 Using cached vector search results');
+      } else {
+        // Cache miss - perform vector search and cache results
+        console.log('🔍 Cache miss - performing vector search');
+        searchResults = await globalTimer.timeAsync('Vector-Search', async () => {
+          return await this.vectorSearch(query, topK);
+        });
+
+        // Cache the results for future use
+        await ragQueryCache.cacheResults(query, searchResults);
+      }
 
       // Debug: Log all results with scores
       console.log('🔍 All search results:');
