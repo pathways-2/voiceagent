@@ -119,3 +119,4 @@ tmp/
 temp/ 
 # Cache files
 data/*-cache.json
+data/rag-query-cache.json
