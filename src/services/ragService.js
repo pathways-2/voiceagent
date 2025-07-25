@@ -1,6 +1,13 @@
 const { Configuration, PipelinesApi } = require('@vectorize-io/vectorize-client');
 const OpenAI = require('openai');
+const path = require('path');
+const fs = require('fs').promises;
 const { globalTimer } = require('../utils/timer');
+
+// Model configuration for RAG tasks
+const MODEL_CONFIG = {
+  ragResponse: 'gpt-4.1-nano'  // Fast and cost-effective for RAG responses
+};
 
 class RAGService {
   constructor() {
@@ -172,7 +179,7 @@ RESPONSE:`;
 
       const completion = await globalTimer.timeAsync('OpenAI-RAG-Response-Generation', async () => {
         return await this.openai.chat.completions.create({
-          model: 'gpt-4',
+          model: MODEL_CONFIG.ragResponse,
           messages: [{ role: 'user', content: prompt }],
           temperature: 0.7,
           max_tokens: 80

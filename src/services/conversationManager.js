@@ -3,6 +3,13 @@ const RAGService = require('./ragService');
 const { globalTimer } = require('../utils/timer');
 const { restaurantHoursCache } = require('../utils/restaurantHoursCache');
 
+// Model configuration for different OpenAI tasks
+const MODEL_CONFIG = {
+  chatCompletion: 'gpt-4.1-mini',     // Fast GPT-4 quality for conversations
+  intentAnalysis: 'gpt-4.1-mini',    // Fast GPT-4 quality for intent detection
+  queryPreprocessing: 'gpt-4.1-nano' // Fastest for simple query cleaning
+};
+
 class ConversationManager {
   constructor() {
     this.openai = new OpenAI({
@@ -37,7 +44,7 @@ SAMPLE CORRECT FLOW:
 Customer: "I want a reservation for 4pm tomorrow for 5 people"
 You: "Let me check our availability..." 
 System: Checks availability for 4pm (restaurant closed)
-You: "I'm sorry, we're closed at 4pm. However, I have availability for 5 people at 5:00 PM, 5:30 PM, or 6:00 PM. Would any of these work?"
+You: "I am sorry, we're closed at 4pm. However, I have availability for 5 people at 5:00 PM, 5:30 PM, or 6:00 PM. Would any of these work?"
 Customer: "5:30 PM works"
 You: "Perfect! Now may I get your name and phone number to complete the reservation?"
 
@@ -59,8 +66,8 @@ CRITICAL: NEVER say specific times are "busy" or "available" without the system 
   async getGreeting() {
     const greetings = [
       "Thank you for calling Sylvie's Kitchen! This is Rooney, your friendly assistant. How may I help you today?",
-      "Hello and welcome to Sylvie's Kitchen! I'm Rooney, how may I help you today?",
-      "Hello! You've reached Sylvie's Kitchen. I'm Rooney, your virtual assistant. How can I assist you today?"
+      "Hello and welcome to Sylvie's Kitchen! I am Rooney, how may I help you today?",
+      "Hello! You've reached Sylvie's Kitchen. I am Rooney, your virtual assistant. How can I assist you today?"
     ];
     
     return greetings[Math.floor(Math.random() * greetings.length)];
@@ -251,7 +258,7 @@ CRITICAL: NEVER say specific times are "busy" or "available" without the system 
       // Call OpenAI for response
       const completion = await globalTimer.timeAsync('OpenAI-Chat-Completion', async () => {
         return await this.openai.chat.completions.create({
-          model: 'gpt-4',
+          model: MODEL_CONFIG.chatCompletion,
           messages: [
             { role: 'system', content: this.systemPrompt },
             ...conversation.messages
@@ -314,7 +321,7 @@ CRITICAL: NEVER say specific times are "busy" or "available" without the system 
       console.error('Error with OpenAI:', error);
       
       return {
-        message: "I'm sorry, I'm having some technical difficulties. Let me transfer you to one of our team members who can help you right away.",
+        message: "I am sorry, I am having some technical difficulties. Let me transfer you to one of our team members who can help you right away.",
         transferToHuman: true
       };
     }
@@ -341,9 +348,9 @@ IMPORTANT RULES:
 
 GOODBYE/TERMINATION DETECTION:
 Set "conversationComplete": true for phrases like:
-- "no thanks", "no thank you", "nope", "I'm good", "I'm all set"
+- "no thanks", "no thank you", "nope", "I am good", "I am all set"
 - "bye", "goodbye", "see you later", "have a good day"  
-- "that's all", "that's it", "nothing else", "I'm done"
+- "that's all", "that's it", "nothing else", "I am done"
 - "thanks, that's everything", "perfect, thanks"
 - Any clear indication they want to end the call
 
@@ -369,7 +376,7 @@ Respond in JSON format:
     try {
       const completion = await globalTimer.timeAsync('OpenAI-Intent-Analysis', async () => {
         return await this.openai.chat.completions.create({
-          model: 'gpt-4',
+          model: MODEL_CONFIG.intentAnalysis,
           messages: [{ role: 'user', content: analysisPrompt }],
           temperature: 0.3,
           max_tokens: 300
@@ -481,7 +488,7 @@ Examples:
 Return only the cleaned query, nothing else:`;
 
       const completion = await this.openai.chat.completions.create({
-        model: 'gpt-4',
+        model: MODEL_CONFIG.queryPreprocessing,
         messages: [{ role: 'user', content: cleaningPrompt }],
         temperature: 0.3,
         max_tokens: 50

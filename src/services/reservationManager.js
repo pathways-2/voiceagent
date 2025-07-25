@@ -172,7 +172,7 @@ class ReservationManager {
       if (partySize > this.restaurantConfig.maxPartySize) {
         resolve({
           available: false,
-          reason: `I'm sorry, our maximum party size is ${this.restaurantConfig.maxPartySize} people. For larger groups, please call us directly.`,
+          reason: `I am sorry, our maximum party size is ${this.restaurantConfig.maxPartySize} people. For larger groups, please call us directly.`,
           alternatives: []
         });
         return;
@@ -212,7 +212,7 @@ class ReservationManager {
             
           resolve({
             available: false,
-            message: `I'm sorry, but we're fully booked at ${moment(time, 'HH:mm').format('h:mm A')} on ${moment(date).format('dddd, MMMM Do')}.${alternativeText}`,
+            message: `I am sorry, but we're fully booked at ${moment(time, 'HH:mm').format('h:mm A')} on ${moment(date).format('dddd, MMMM Do')}.${alternativeText}`,
             followUpQuestion: 'Would you like to try a different date, or would a different party size work?'
           });
         }

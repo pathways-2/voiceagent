@@ -167,7 +167,7 @@ class VoiceProcessor {
       globalTimer.end(overallTimer);
       
       return {
-        message: "I apologize, but I'm experiencing some technical difficulties. Let me connect you with one of our team members who can assist you.",
+        message: "I apologize, but I am experiencing some technical difficulties. Let me connect you with one of our team members who can assist you.",
         transferToHuman: true,
         error: true
       };
@@ -304,7 +304,7 @@ class VoiceProcessor {
       
       return {
         available: false,
-        message: "I'm sorry, I'm having trouble checking our availability right now. Please try again or call us directly.",
+        message: "I am sorry, I am having trouble checking our availability right now. Please try again or call us directly.",
         followUpQuestion: "Would you like me to transfer you to someone who can help?",
         alternatives: []
       };
@@ -390,7 +390,7 @@ class VoiceProcessor {
       });
 
       if (reservation && reservation.id) {
-        const confirmationMessage = `Perfect! I've successfully booked your table for ${reservation.partySize} people on ${this.formatDate(reservation.date)} at ${this.formatTime(reservation.time)} under the name ${reservation.customerName}.`;
+        const confirmationMessage = `Perfect! I have successfully booked your table for ${reservation.partySize} people on ${this.formatDate(reservation.date)} at ${this.formatTime(reservation.time)} under the name ${reservation.customerName}.`;
         
         return {
           success: true,
@@ -413,7 +413,7 @@ class VoiceProcessor {
       
       return {
         success: false,
-        message: "I'm sorry, there was an issue completing your reservation. Please try again or call us directly to book your table."
+        message: "I am sorry, there was an issue completing your reservation. Please try again or call us directly to book your table."
       };
     }
   }
