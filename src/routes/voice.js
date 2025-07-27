@@ -16,6 +16,7 @@ const voiceProcessor = new VoiceProcessor();
 // Handle incoming calls
 router.post('/incoming', async (req, res) => {
   console.log('📞 Incoming call from:', req.body.From);
+  console.log('🕒 Call started at:', new Date().toISOString());
   
   const twiml = new VoiceResponse();
   
@@ -27,7 +28,8 @@ router.post('/incoming', async (req, res) => {
       input: 'speech',
       action: '/voice/process-speech',
       method: 'POST',
-      speechTimeout: 5, // 5 seconds timeout
+      speechTimeout: 'auto', // Auto-detect end of speech
+      speechModel: 'phone_call', // Optimized for phone calls
       language: 'en-US',
       hints: 'reservation, table, booking, menu, hours, wine, dinner, lunch'
     });
@@ -59,6 +61,10 @@ router.post('/incoming', async (req, res) => {
 
 // Process speech input
 router.post('/process-speech', async (req, res) => {
+  // 🆕 WEBHOOK ARRIVAL TIMING - This captures Twilio STT + delivery delay
+  const webhookArrivalTime = Date.now();
+  console.log('🕒 Webhook arrived at server:', new Date(webhookArrivalTime).toISOString());
+  
   const { SpeechResult, From, CallSid } = req.body;
   
   console.log('🎤 Speech received:', SpeechResult);
@@ -78,6 +84,7 @@ router.post('/process-speech', async (req, res) => {
         action: '/voice/process-speech',
         method: 'POST',
         speechTimeout: 'auto',
+        speechModel: 'phone_call',
         language: 'en-US'
       });
       
@@ -136,7 +143,8 @@ router.post('/process-speech', async (req, res) => {
           input: 'speech',
           action: '/voice/process-speech',
           method: 'POST',
-          speechTimeout: 10, // 10 seconds for longer responses
+          speechTimeout: 'auto', // Auto-detect end of speech
+          speechModel: 'phone_call',
           language: 'en-US',
           hints: 'yes, no, seven, nine, tonight, tomorrow, reservation, table, time'
         });
@@ -175,7 +183,8 @@ router.post('/process-speech', async (req, res) => {
             input: 'speech',
             action: '/voice/process-speech',
             method: 'POST',
-            speechTimeout: 10,
+            speechTimeout: 'auto',
+            speechModel: 'phone_call',
             language: 'en-US'
           });
           
@@ -278,7 +287,8 @@ router.post('/retry', async (req, res) => {
         input: 'speech',
         action: '/voice/process-speech',
         method: 'POST',
-        speechTimeout: 8, // Slightly longer timeout for retry
+        speechTimeout: 'auto', // Auto-detect end of speech
+        speechModel: 'phone_call',
         language: 'en-US',
         hints: 'reservation, table, booking, menu, hours, wine, dinner, lunch, help'
       });
